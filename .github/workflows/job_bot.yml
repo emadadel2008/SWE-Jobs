@@ -2,7 +2,7 @@ name: Programming Jobs Bot
 
 on:
   schedule:
-    - cron: '7,22,37,52 * * * *'  # Every 15 minutes, offset from top-of-hour load
+    - cron: '0 */2 * * *'  # Every two hours
   workflow_dispatch:  # Manual trigger.
     inputs:
       seed_mode:
