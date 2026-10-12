@@ -6,34 +6,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from models import Job
 from telegram_sender import format_job_message, route_job
-from config import CHANNELS, PRIMARY_TOPIC_ORDER
+from config import CHANNELS
 
 
 class TelegramRoutingTests(unittest.TestCase):
-    def test_only_compact_primary_topics_are_active(self):
-        self.assertEqual(
-            set(CHANNELS),
-            {
-                "general",
-                "backend",
-                "frontend",
-                "mobile",
-                "devops",
-                "qa",
-                "ai_ml",
-                "cybersecurity",
-                "internships",
-                "erp",
-            },
-        )
-        self.assertNotIn("linkedin_all", CHANNELS)
-        self.assertNotIn("egypt", CHANNELS)
-        self.assertNotIn("saudi", CHANNELS)
-
-    def test_priority_order_contains_only_specific_topics(self):
-        self.assertNotIn("general", PRIMARY_TOPIC_ORDER)
-        self.assertEqual(PRIMARY_TOPIC_ORDER[0], "internships")
-        self.assertTrue(set(PRIMARY_TOPIC_ORDER).issubset(CHANNELS))
+    def test_only_microsoft_cloud_topic_is_active(self):
+        self.assertEqual(set(CHANNELS), {"microsoft_cloud"})
+        self.assertEqual(CHANNELS["microsoft_cloud"]["thread_env"], "TOPIC_MICROSOFT_CLOUD")
 
     def test_backend_job_routes_once_even_when_linkedin_and_in_egypt(self):
         job = Job(
@@ -42,22 +21,22 @@ class TelegramRoutingTests(unittest.TestCase):
             location="Cairo, Egypt",
             url="https://www.linkedin.com/jobs/view/1234567890",
             source="linkedin",
-            tags=["Python"],
+            tags=["Python", "Azure"],
         )
-        self.assertEqual(route_job(job), ["backend"])
+        self.assertEqual(route_job(job), ["microsoft_cloud"])
 
-    def test_internship_wins_over_role_to_avoid_cross_posting(self):
+    def test_cloud_internship_routes_to_same_topic_without_cross_posting(self):
         job = Job(
             title="Backend Developer Intern",
             company="Acme",
             location="Riyadh, Saudi Arabia",
             url="https://example.com/intern",
             source="wuzzuf",
-            tags=[".NET"],
+            tags=[".NET", "Azure"],
         )
-        self.assertEqual(route_job(job), ["internships"])
+        self.assertEqual(route_job(job), ["microsoft_cloud"])
 
-    def test_data_engineering_is_merged_into_data_and_ai(self):
+    def test_data_engineering_without_cloud_evidence_is_rejected(self):
         job = Job(
             title="Data Engineer",
             company="Acme",
@@ -66,10 +45,9 @@ class TelegramRoutingTests(unittest.TestCase):
             source="linkedin",
             tags=["Airflow", "dbt"],
         )
-        self.assertEqual(route_job(job), ["ai_ml"])
-        self.assertEqual(CHANNELS["ai_ml"]["name"], "🤖 Data & AI")
+        self.assertEqual(route_job(job), [])
 
-    def test_generic_tech_role_uses_general_fallback(self):
+    def test_generic_tech_role_has_no_fallback_topic(self):
         job = Job(
             title="Software Engineer",
             company="Acme",
@@ -78,7 +56,7 @@ class TelegramRoutingTests(unittest.TestCase):
             source="linkedin",
             tags=[],
         )
-        self.assertEqual(route_job(job), ["general"])
+        self.assertEqual(route_job(job), [])
 
     def test_unrelated_linkedin_role_is_not_kept_just_for_its_source(self):
         job = Job(
@@ -93,14 +71,14 @@ class TelegramRoutingTests(unittest.TestCase):
 
     def test_market_is_metadata_not_an_extra_topic(self):
         job = Job(
-            title="Backend Developer",
+            title="Azure Backend Developer",
             company="Acme",
             location="Riyadh, Saudi Arabia",
             url="https://example.com/backend",
             source="linkedin",
         )
         message = format_job_message(job)
-        self.assertEqual(route_job(job), ["backend"])
+        self.assertEqual(route_job(job), ["microsoft_cloud"])
         self.assertIn("#SaudiArabia", message)
         self.assertNotIn("#Egypt", message)
 
@@ -137,7 +115,7 @@ class TelegramRoutingTests(unittest.TestCase):
 
     def test_saudi_eligibility_is_metadata_not_a_topic(self):
         saudi_only = Job(
-            title="Backend Developer",
+            title="Azure Backend Developer",
             company="Acme",
             location="Riyadh, Saudi Arabia",
             url="https://example.com/saudi-only",
@@ -147,7 +125,7 @@ class TelegramRoutingTests(unittest.TestCase):
         message = format_job_message(saudi_only)
         self.assertIn("Eligibility: Saudi nationals only", message)
         self.assertIn("#SaudiOnly", message)
-        self.assertEqual(route_job(saudi_only), ["backend"])
+        self.assertEqual(route_job(saudi_only), ["microsoft_cloud"])
 
         explicitly_open = Job(
             title="Backend Developer",
@@ -174,7 +152,7 @@ class TelegramRoutingTests(unittest.TestCase):
         import telegram_sender
 
         job = Job(
-            title="Backend Developer",
+            title="Azure Backend Developer",
             company="Acme",
             location="Remote",
             url="https://example.com/job",

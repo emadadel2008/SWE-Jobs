@@ -68,6 +68,19 @@ class LinkedInParserTests(unittest.TestCase):
     def test_search_list_is_intentionally_small(self):
         self.assertLessEqual(len(linkedin.LINKEDIN_SEARCHES), 24)
 
+    def test_production_searches_target_cloud_products_in_existing_markets(self):
+        expected_keywords = {
+            "Azure", "Microsoft 365", "Office 365", "Entra",
+            "Dynamics 365", "Power Platform", "Power BI",
+        }
+        for market in ({"location": "Egypt"}, {"location": "Saudi Arabia"}, {"f_WT": "2"}):
+            searches = [
+                search for search in linkedin.LINKEDIN_SEARCHES
+                if all(search.get(key) == value for key, value in market.items())
+            ]
+            self.assertEqual({search["keywords"] for search in searches}, expected_keywords)
+            self.assertTrue(all("company" not in search for search in searches))
+
     def test_fetch_uses_pagination_and_getter(self):
         requested = []
 

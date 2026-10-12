@@ -65,17 +65,8 @@ jobs:
           # Once VPS is production, manual Actions runs are forced to seed mode
           # so a stale data-branch copy can never double-send Telegram jobs.
           SEED_MODE: ${{ vars.VPS_PRODUCTION == 'true' && 'true' || (github.event.inputs.seed_mode || 'false') }}
-          # Active primary topic Thread IDs (one Telegram post per job)
-          TOPIC_GENERAL: ${{ secrets.TOPIC_GENERAL }}
-          TOPIC_BACKEND: ${{ secrets.TOPIC_BACKEND }}
-          TOPIC_FRONTEND: ${{ secrets.TOPIC_FRONTEND }}
-          TOPIC_MOBILE: ${{ secrets.TOPIC_MOBILE }}
-          TOPIC_DEVOPS: ${{ secrets.TOPIC_DEVOPS }}
-          TOPIC_QA: ${{ secrets.TOPIC_QA }}
-          TOPIC_AI_ML: ${{ secrets.TOPIC_AI_ML }}
-          TOPIC_CYBERSECURITY: ${{ secrets.TOPIC_CYBERSECURITY }}
-          TOPIC_INTERNSHIPS: ${{ secrets.TOPIC_INTERNSHIPS }}
-          TOPIC_ERP: ${{ secrets.TOPIC_ERP }}
+          # Single Microsoft Cloud forum topic (configured thread ID: 279)
+          TOPIC_MICROSOFT_CLOUD: ${{ secrets.TOPIC_MICROSOFT_CLOUD }}
         run: python main.py
 
       - name: Save SQLite database to data branch

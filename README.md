@@ -1,6 +1,6 @@
 # Programming Jobs Telegram Bot
 
-Quality-first Telegram bot for **fresh software/tech jobs**, with LinkedIn as the current production feed, Saudi Arabia as the main expansion focus, and Telegram forum topics organized by role instead of country/source.
+Quality-first Telegram bot for **fresh Microsoft Cloud jobs from any employer**, with LinkedIn as the current production feed. Relevant jobs go to one Microsoft Cloud forum topic (thread ID **279**), not per-role topics.
 
 The product goal is a real-time job feed, not a historical job archive:
 
@@ -14,29 +14,29 @@ The product goal is a real-time job feed, not a historical job archive:
 - **Shadow-by-default sources:** any source not explicitly promoted to production is measured and stored but cannot send to Telegram. Shadow discovery cannot suppress a later fresh production discovery of the same job.
 - **Per-source run history:** fetch counts, freshness outcomes, failures, duration, shadow yield, coverage gaps, and health status are stored for later source scoring.
 - **Optional private admin monitoring:** health transitions and a compact 24-hour digest can be sent to a separate admin chat without adding public topics or messages.
-- **Per-source scheduling:** GitHub is requested to run every 15 minutes, while individual ATS tenants persist `next_poll_at` and can run every 30–60 minutes without wasting requests. Actual GitHub scheduled starts can be delayed.
+- **Per-source scheduling:** GitHub is requested to run every two hours; individual sources persist `next_poll_at` and are fetched when due. Actual GitHub scheduled starts can be delayed.
 - **SQLite state:** jobs, source postings, source state, freshness evidence, delivery state, and delivery attempts live in `jobs.db`.
 - **Durable Telegram outbox:** delivery state is written before the network call.
-- **Measured bilingual classifier:** English + Arabic tech-title classification drives both broad LinkedIn filtering and the single primary Telegram topic.
+- **Microsoft Cloud relevance:** explicit product evidence in the title, tags, or available description gates runtime filtering and delivery. Broad bilingual tech classification remains available for source discovery.
 - **Market/source as metadata:** Egypt/Saudi/Remote and the source are shown in the message instead of creating duplicate topic posts.
 - **Evidence-based Saudi eligibility:** explicit Saudi-only/open-to-non-Saudi text is extracted from available job descriptions; silence stays `NOT_SPECIFIED`.
 - **Telegram backpressure:** rate limiting, `retry_after`, bounded transient retries, and ambiguous-timeout protection.
-- **Runtime:** GitHub Actions is the **current active production runtime** with a requested `7,22,37,52 * * * *` schedule. GitHub cron is best-effort and has shown delayed runs in practice. VPS/systemd support is prepared in the repository as an optional future runtime, but it is **not active** unless an intentional cutover is performed with `VPS_PRODUCTION=true`.
+- **Runtime:** GitHub Actions is the **current active production runtime** with a requested `0 */2 * * *` schedule. GitHub cron is best-effort and has shown delayed runs in practice. VPS/systemd support is prepared in the repository as an optional future runtime, but it is **not active** unless an intentional cutover is performed with `VPS_PRODUCTION=true`.
 
 
 ## Current Production Status
 
 The current live deployment intentionally stays on **GitHub Actions + the `data` branch SQLite snapshot**.
 
-- Workflow schedule requested from GitHub: `7,22,37,52 * * * *` (`:07`, `:22`, `:37`, `:52`). This keeps the same 15-minute cadence while avoiding the top-of-hour/minute-quarter peaks.
-- GitHub scheduled execution is **best-effort**, so an actual run can start later than the requested 15-minute cadence.
+- Workflow schedule requested from GitHub: `0 */2 * * *` (every two hours).
+- GitHub scheduled execution is **best-effort**, so an actual run can start later than the requested cadence.
 - `VPS_PRODUCTION` should remain unset/`false` while GitHub owns production. The VPS files added in Update 19 are standby deployment tooling only.
 - LinkedIn is the active send-capable production fetcher. WUZZUF is paused at runtime after repeated `403` responses.
 - Saudi LinkedIn V2, Jobzaty Discovery, and all company ATS feeds remain shadow/discovery sources and cannot independently send Telegram jobs.
 - The current deployment does **not** enable automatic gap catch-up/backfill. A long GitHub scheduling gap can still mean jobs were missed during the outage, but LinkedIn's next bounded `r3600` result set remains eligible on its own instead of being rejected merely because the previous poll was late.
 - Topic renames inside Telegram are safe: renaming an existing forum topic does not change its `message_thread_id`, so the stored GitHub topic secret does not need to change unless the topic itself is deleted/recreated.
 
-A recent manual production verification after the topic cleanup found fresh jobs and delivered them successfully across **Frontend**, **Other Tech**, **Backend**, and **Data & AI**, with no Telegram delivery failures. This confirms the routing/topic IDs are working; the remaining timing limitation is GitHub's scheduler, not the Telegram queue.
+The ten former role topics are retired from routing. Only `TOPIC_MICROSOFT_CLOUD` is read for public job delivery; the configured Actions secret is `279`.
 
 ## Sources
 
@@ -45,7 +45,7 @@ Enabled sources are assembled in `sources/__init__.py` as `ALL_FETCHERS`. Core f
 | Source | Status | Notes |
 |---|---|---|
 | WUZZUF | Paused | Repeated 403 responses from GitHub-hosted runners; parser retained for future re-evaluation |
-| LinkedIn | Production | Existing public guest search strategy |
+| LinkedIn | Production | 21 bounded Microsoft Cloud product searches across Egypt, Saudi Arabia, and global remote; no employer restriction |
 | LinkedIn Saudi V2 | Shadow | Saudi `geoId=100459316`, broad country search + ERP/business-systems gap fillers |
 | Jobzaty Discovery | Shadow · discovery-only | Public Saudi programming/cybersecurity/IT category cards · 60 min poll · never sends |
 | HALA | Shadow ATS | Greenhouse public job board · 30 min poll |
@@ -112,9 +112,9 @@ The adapters live in `sources/ats.py` and use public career-site read endpoints 
 
 ### Source scheduling and health
 
-GitHub Actions is configured for a 15-minute schedule, but scheduled workflow execution is best-effort and can be delayed. Update 10 no longer fetches every source on every workflow run. `source_runs` persists `poll_interval_minutes`, `next_poll_at`, `health_status`, and `last_nonempty_at`. Active core feeds (`linkedin` and the Saudi V2 shadow comparison) remain on a 15-minute requested cadence. Jobzaty discovery runs hourly. ATS companies use the interval declared in `companies/saudi_ats.json`; the initial registry uses 30–60 minute polls.
+GitHub Actions is configured for a two-hour schedule, but scheduled workflow execution is best-effort and can be delayed. `source_runs` persists `poll_interval_minutes`, `next_poll_at`, `health_status`, and `last_nonempty_at`. Source intervals are minimum polling intervals, not independent timers: sources due since the last Actions run are fetched on the next run. Jobzaty and ATS intervals remain unchanged.
 
-A successful source schedules its next normal poll at its configured interval. A failed source retries on the next workflow run (nominally the next 15-minute cycle) even when its normal cadence is slower. Sources that are not due are skipped without blocking the Telegram delivery queue.
+A successful source schedules its next normal poll at its configured interval. A failed source retries on the next workflow run even when its normal cadence is slower. Sources that are not due are skipped without blocking the Telegram delivery queue.
 
 Health intentionally distinguishes a quiet ATS tenant from a broken integration:
 
@@ -134,7 +134,9 @@ The current V2 source is not in `PRODUCTION_SOURCE_KEYS`, so it can populate met
 
 ## Classifier and Saudi Location Normalization
 
-`classifier.py` is the deterministic routing/filtering baseline. It supports English and Arabic tech titles, uses strong non-tech exclusions, and returns exactly one topic or `not tech`. A golden test set currently covers representative Backend, Frontend, Mobile, Data & AI, DevOps, QA, Cybersecurity, ERP, Internship, general-tech, Arabic, and non-tech cases. The dataset is intentionally small to start and should be expanded from real production misses/false positives.
+`classifier.py` retains deterministic broad English/Arabic tech classification for discovery compatibility. Telegram relevance is separate: `is_microsoft_cloud_job()` requires word-bounded product evidence in the title, tags (including nested tags), or available description. It covers Azure, Microsoft/Office 365, Entra ID, Dynamics 365, Power Platform/Apps/Automate/BI, Dataverse, Business Central, Intune, and related Microsoft Cloud services.
+
+Employer is not evidence: a Microsoft job without a cloud product signal is excluded, while an Azure role at any other company is included. Generic cloud, AWS/GCP-only, standalone .NET, Windows Server, and generic Active Directory roles are excluded. Descriptions are inspected only when already supplied by the source; no new detail-page crawling is added. Existing geography, freshness, source baselines, shadow/discovery-only rules, and duplicate protection remain unchanged.
 
 `locations.py` normalizes common Saudi Arabic/English city variants (for example Riyadh/الرياض, Jeddah/Jiddah/جدة, Khobar/الخبر, Dammam/الدمام, NEOM/نيوم). Location remains metadata, not a routing dimension. Messages can include city hashtags such as `#Riyadh` without creating extra Telegram topics.
 
@@ -196,24 +198,15 @@ A digest is sent at most once per `ADMIN_DIGEST_INTERVAL_HOURS` (default `24`) a
 
 ## Telegram Topics
 
-The bot uses **one primary topic per job**. A job is no longer copied to General + role + country + source topics.
+The bot uses **one primary topic per job**, exclusively for Microsoft Cloud roles. There is no general-tech fallback.
 
 Current Telegram group layout:
 
 | Topic key | Visible Telegram topic | GitHub secret | Purpose |
 |---|---|---|---|
-| `internships` | 🎓 **Internships** | `TOPIC_INTERNSHIPS` | Internships, trainee programs, and fresh/entry-level opportunities |
-| `backend` | ⚙️ **Backend** | `TOPIC_BACKEND` | Backend and full-stack roles |
-| `frontend` | 🎨 **Frontend** | `TOPIC_FRONTEND` | Frontend / web UI development |
-| `mobile` | 📱 **Mobile** | `TOPIC_MOBILE` | Android, iOS, Flutter, React Native |
-| `ai_ml` | 🤖 **Data & AI** | `TOPIC_AI_ML` | Data engineering, analytics, data science, AI/ML |
-| `devops` | ☁️ **DevOps** | `TOPIC_DEVOPS` | DevOps, cloud, infrastructure, SRE |
-| `qa` | 🧪 **QA** | `TOPIC_QA` | QA and software testing |
-| `cybersecurity` | 🔐 **Cybersecurity** | `TOPIC_CYBERSECURITY` | Security and cybersecurity roles |
-| `erp` | 🏢 **ERP / Business Apps** | `TOPIC_ERP` | ERP, SAP, Odoo, Salesforce, Dynamics, business applications |
-| `general` | 💻 **Other Tech** | `TOPIC_GENERAL` | Relevant tech roles that do not match a more specific category |
+| `microsoft_cloud` | **Microsoft Cloud** | `TOPIC_MICROSOFT_CLOUD` | Microsoft Cloud jobs from any employer; thread ID `279` |
 
-Routing is deterministic. The first matching category wins, with **Internships** intentionally having the highest priority. Generic relevant tech titles such as `Software Engineer` fall back to `general` / **Other Tech**.
+Routing is deterministic: product evidence means `microsoft_cloud`; otherwise no topic. Cloud internships, support, development, administration, and consulting roles share the same topic.
 
 Country and source are metadata, not routing dimensions. `LinkedIn Fresh`, `Egypt`, and `Saudi` are no longer active topics. Country is represented in the card and with lightweight hashtags such as:
 
@@ -225,7 +218,7 @@ Country and source are metadata, not routing dimensions. `LinkedIn Fresh`, `Egyp
 
 ### Telegram group cleanup
 
-The old forum layout contained more categories than the bot now uses. These old topics are retired from routing and can be **closed/archived rather than deleted** so their history stays visible:
+The ten previous role topics (Other Tech, Backend, Frontend, Mobile, DevOps, QA, Data & AI, Cybersecurity, Internships, ERP / Business Apps), plus earlier retired topics below, are no longer used. They can be **closed/archived rather than deleted** so their history stays visible:
 
 ```text
 Jobs in Egypt
@@ -240,13 +233,13 @@ GameDev Jobs
 Blockchain Jobs
 ```
 
-`Data Engineering Jobs` is now part of **Data & AI**. Application-support/game/blockchain roles that still pass the tech classifier fall into the most appropriate active topic, usually **Other Tech**, Backend, or another role-specific category. Marketing/business/UI-UX roles do not get a dedicated topic anymore.
+Only the Microsoft Cloud topic receives new job posts. Existing Telegram topics are not deleted automatically.
 
 If an existing Telegram topic is only **renamed**, keep its current GitHub secret/thread ID. Update the secret only when a topic is actually deleted and recreated with a new `message_thread_id`.
 
 ### Routing transition safety
 
-Older bot versions could create several delivery rows for one job. During the Update 5 transition, if a pending job was already successfully posted to a retired topic, the bot marks it delivered instead of creating a new primary-topic duplicate.
+Pending jobs are rechecked for Microsoft Cloud relevance and geography before sending, so unrelated legacy backlog is skipped. If a relevant pending job was already successfully posted to a retired topic, the bot marks it delivered instead of creating a new primary-topic duplicate.
 
 ## Required GitHub Secrets
 
@@ -267,28 +260,19 @@ TELEGRAM_ADMIN_CHAT_ID
 
 When set, the bot sends health transitions and one compact digest roughly every 24 hours to that separate chat. If it is absent, monitoring stays in GitHub Actions logs only and public Telegram behaviour is unchanged.
 
-Active topic secrets:
+The single active topic secret (already configured to `279`):
 
 ```text
-TOPIC_GENERAL
-TOPIC_BACKEND
-TOPIC_FRONTEND
-TOPIC_MOBILE
-TOPIC_DEVOPS
-TOPIC_QA
-TOPIC_AI_ML
-TOPIC_CYBERSECURITY
-TOPIC_INTERNSHIPS
-TOPIC_ERP
+TOPIC_MICROSOFT_CLOUD
 ```
 
-Old secrets such as `TOPIC_LINKEDIN_ALL`, `TOPIC_EGYPT`, `TOPIC_SAUDI`, `TOPIC_MARKETING`, and similar retired topic secrets are no longer read by the workflow. They can be removed from GitHub later if desired.
+The ten former role secrets and all older retired topic secrets are no longer read by the workflow or runtime. They may be removed from GitHub without changing `TELEGRAM_BOT_TOKEN`, `TELEGRAM_GROUP_ID`, or `TOPIC_MICROSOFT_CLOUD`.
 
 ## Getting a Telegram Topic ID
 
 1. Create or open the Telegram supergroup.
 2. Enable Topics.
-3. Create the required role topic.
+3. Create or open the Microsoft Cloud topic.
 4. Copy/open its topic link.
 5. Use the topic thread ID as the matching GitHub secret.
 
@@ -492,12 +476,12 @@ Workflow:
 Requested schedule:
 
 ```cron
-7,22,37,52 * * * *
+0 */2 * * *
 ```
 
-This means GitHub is asked to start the workflow at `:07`, `:22`, `:37`, and `:52` every hour. The cadence is still exactly 15 minutes, but the offset avoids the busiest top-of-hour and quarter-hour boundaries. **GitHub Actions is the current production runtime.** The workflow has a `concurrency` group with `cancel-in-progress: false`, restores SQLite from the `data` branch, runs `main.py`, and writes the updated database back.
+This requests a run every two hours. **GitHub Actions is the current production runtime.** The workflow has a `concurrency` group with `cancel-in-progress: false`, restores SQLite from the `data` branch, runs `main.py`, and writes the updated database back.
 
-GitHub's scheduled-event timing is best-effort. Production history has shown delays substantially longer than 15 minutes even though the cron expression is correct. Manual `workflow_dispatch` runs are useful for verification and, while `VPS_PRODUCTION` is unset/false, can perform normal production sends when `seed_mode=false`.
+GitHub's scheduled-event timing is best-effort. The two-hour cadence does not widen source freshness windows or add backfill; jobs can be missed between polls. Manual `workflow_dispatch` runs are useful for verification and, while `VPS_PRODUCTION` is unset/false, can perform normal production sends when `seed_mode=false`.
 
 Do **not** set `VPS_PRODUCTION=true` in the current deployment. That variable is reserved for an intentional future VPS cutover. Once set, scheduled Actions jobs skip production and manual Actions runs are forced into seed mode so two independent SQLite copies cannot both send Telegram jobs.
 
@@ -566,9 +550,7 @@ Run locally from PowerShell:
 ```powershell
 $env:TELEGRAM_BOT_TOKEN="your_bot_token"
 $env:TELEGRAM_GROUP_ID="-100xxxxxxxxxx"
-$env:TOPIC_GENERAL="1"
-$env:TOPIC_BACKEND="2"
-$env:TOPIC_FRONTEND="3"
+$env:TOPIC_MICROSOFT_CLOUD="279"
 python main.py
 ```
 
@@ -649,10 +631,10 @@ python main.py
 ## Operational Notes
 
 - **Current production owner:** GitHub Actions. `VPS_PRODUCTION` should stay unset/false unless a deliberate VPS cutover is being performed.
-- The workflow cron is `7,22,37,52 * * * *`; it still requests a 15-minute cadence but is intentionally offset from top-of-hour/quarter-hour boundaries. Delayed starts can still occur because GitHub scheduling is best-effort.
+- The workflow cron is `0 */2 * * *` (every two hours). Delayed starts can still occur because GitHub scheduling is best-effort.
 - There is currently no automatic long-gap catch-up/backfill mode. Coverage gaps are logged, but a job can be missed if it falls outside a source's later search window.
 - Keep the bot as an admin in the Telegram supergroup.
-- Configure all ten active primary topic secrets before enabling production sends.
+- Configure `TOPIC_MICROSOFT_CLOUD=279` before enabling production sends; no role topic secrets are needed.
 - A missing active topic secret causes `CONFIG_ERROR` for jobs assigned to that topic.
 - Renaming an existing Telegram topic is safe and does not require changing its secret/thread ID. Only a delete/recreate operation produces a new topic ID.
 - Retired Telegram topics can be closed instead of deleted so their historical posts remain accessible.

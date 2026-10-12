@@ -23,8 +23,8 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertEqual(concurrency.get("group"), "programming-jobs-bot")
         self.assertIs(concurrency.get("cancel-in-progress"), False)
 
-    def test_schedule_is_every_15_minutes_with_offset(self):
-        self.assertIn("cron: '7,22,37,52 * * * *'", self.text)
+    def test_schedule_is_every_two_hours(self):
+        self.assertIn("cron: '0 */2 * * *'", self.text)
         self.assertNotIn("cron: '*/15 * * * *'", self.text)
         self.assertNotIn("cron: '*/5 * * * *'", self.text)
 
@@ -56,6 +56,13 @@ class WorkflowConfigTests(unittest.TestCase):
         required_envs = [
             "TELEGRAM_BOT_TOKEN",
             "TELEGRAM_GROUP_ID",
+            "TOPIC_MICROSOFT_CLOUD",
+        ]
+        for env_name in required_envs:
+            with self.subTest(env_name=env_name):
+                self.assertIn(env_name + ":", self.text)
+
+        retired_envs = [
             "TOPIC_GENERAL",
             "TOPIC_BACKEND",
             "TOPIC_FRONTEND",
@@ -66,12 +73,6 @@ class WorkflowConfigTests(unittest.TestCase):
             "TOPIC_CYBERSECURITY",
             "TOPIC_INTERNSHIPS",
             "TOPIC_ERP",
-        ]
-        for env_name in required_envs:
-            with self.subTest(env_name=env_name):
-                self.assertIn(env_name + ":", self.text)
-
-        retired_envs = [
             "TOPIC_LINKEDIN_ALL",
             "TOPIC_GAMEDEV",
             "TOPIC_BLOCKCHAIN",
@@ -86,6 +87,9 @@ class WorkflowConfigTests(unittest.TestCase):
         for env_name in retired_envs:
             with self.subTest(retired=env_name):
                 self.assertNotIn(env_name + ":", self.text)
+        env = next(step["env"] for step in self.data["jobs"]["run-bot"]["steps"] if step["name"] == "Run bot")
+        self.assertEqual({key for key in env if key.startswith("TOPIC_")}, {"TOPIC_MICROSOFT_CLOUD"})
+        self.assertEqual(env["TOPIC_MICROSOFT_CLOUD"], "${{ secrets.TOPIC_MICROSOFT_CLOUD }}")
 
     def test_optional_admin_chat_secret_is_exposed(self):
         self.assertIn("TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}", self.text)

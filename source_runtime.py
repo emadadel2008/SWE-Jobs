@@ -1,7 +1,7 @@
 """Scheduling and health helpers for persisted job sources.
 
-The GitHub workflow still wakes every 15 minutes, but individual sources may
-run less often. Source state is persisted in SQLite so expanding the Saudi ATS
+The GitHub workflow wakes every two hours; source intervals are minimum gaps
+between polls. Source state is persisted in SQLite so expanding the Saudi ATS
 registry does not multiply request volume linearly with every workflow run.
 """
 from __future__ import annotations

@@ -17,12 +17,11 @@ from typing import Callable
 import requests
 
 from models import Job
-from classifier import classify_job
+from classifier import is_microsoft_cloud_job
 from locations import saudi_location_hashtags
 from eligibility import SAUDI_ONLY, EXPLICITLY_OPEN, NOT_SPECIFIED
 from config import (
     CHANNELS,
-    PRIMARY_TOPIC_ORDER,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_GROUP_ID,
     TELEGRAM_MAX_INLINE_RETRIES,
@@ -111,9 +110,8 @@ def _is_saudi_job(job: Job) -> bool:
 
 
 def route_job(job: Job) -> list[str]:
-    """Return exactly one measured primary topic for a relevant tech job."""
-    result = classify_job(job)
-    return [result.topic] if result.is_tech and result.topic else []
+    """Send Microsoft Cloud roles from any employer to the single topic."""
+    return ["microsoft_cloud"] if is_microsoft_cloud_job(job) else []
 
 
 # ─── Message Formatting ──────────────────────────────────────
@@ -369,6 +367,9 @@ def send_job(
     When Telegram rate-limits the chat, no further topic attempts are made in
     this call.  The runtime also stops the wider queue for that run.
     """
+    if not is_microsoft_cloud_job(job):
+        log.debug("No Microsoft Cloud evidence for: %s", job.title)
+        return {}
     if target_topics is None:
         target_topics = route_job(job)
     results: dict[str, TelegramSendResult] = {}
