@@ -5,7 +5,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from classifier import classify_job, normalize_text
+from classifier import classify_job, is_microsoft_cloud_job, normalize_text
 from models import Job
 
 
@@ -50,6 +50,58 @@ class ClassifierTests(unittest.TestCase):
     def test_nontech_exclusion_wins_over_generic_engineer(self):
         job = Job("Electrical Engineer", "Acme", "Riyadh", "https://x/1", "linkedin")
         self.assertFalse(classify_job(job).is_tech)
+
+    def test_microsoft_cloud_products_and_aliases(self):
+        titles = (
+            "Azure DevOps Engineer", "Microsoft Cloud Consultant",
+            "Microsoft 365 Administrator", "M365 Support", "Office 365 Engineer",
+            "O365 Migration Consultant", "Entra ID Specialist", "Azure AD Engineer",
+            "AAD Administrator", "AzureAD Administrator", "EntraID Specialist",
+            "AKS Platform Engineer", "MS365 Support", "MS Teams Engineer",
+            "Dynamics 365 Consultant", "D365 F&O Developer", "D365FO Developer",
+            "Microsoft Dynamics CRM Consultant", "Dynamics AX Consultant",
+            "Business Central Developer", "Power Platform Consultant",
+            "PowerApps Developer", "Power Automate Consultant", "Power BI Analyst",
+            "Power Pages Developer", "Copilot Studio Developer", "Dataverse Engineer",
+            "SharePoint Online Administrator", "Exchange Online Engineer",
+            "Microsoft Teams Engineer", "Intune Administrator",
+            "Microsoft Defender Specialist", "Microsoft Sentinel Analyst",
+            "Microsoft Purview Engineer", "Microsoft Fabric Data Engineer",
+            "استشاري ديناميكس 365", "مهندس أزور", "دعم مايكروسوفت 365",
+        )
+        for title in titles:
+            with self.subTest(title=title):
+                job = Job(title, "Any Employer", "Riyadh", "https://x/1", "linkedin")
+                self.assertTrue(is_microsoft_cloud_job(job))
+
+    def test_cloud_evidence_in_tags_or_description(self):
+        for tags, description in (
+            (["Python", ["aZuRe", "SQL"]], ""),
+            ([{"name": "PowerPlatform"}], ""),
+            ([{"label": "Entra ID"}], ""),
+            ([], "Design workloads on Microsoft Azure and AWS."),
+            ([], "<p>Manage Microsoft-365 tenant migrations.</p>"),
+        ):
+            with self.subTest(tags=tags, description=description):
+                job = Job("Systems Specialist", "Acme", "Remote", "https://x/1", "ats_lever_acme",
+                          tags=tags, description=description)
+                self.assertTrue(is_microsoft_cloud_job(job))
+
+    def test_unrelated_jobs_do_not_match_cloud(self):
+        for title in (
+            "Cloud Engineer", "AWS Architect", "GCP Data Engineer", ".NET Developer",
+            "Windows Server Administrator", "Active Directory Engineer", "Software Engineer",
+            "Dynamics of Fluid Systems Researcher", "Power Engineer", "Copilot Developer",
+            "Azureus Developer", "Entranet Administrator", "M3650 Operator", "",
+        ):
+            with self.subTest(title=title):
+                job = Job(title, "Microsoft Azure", "Remote", "https://x/1", "linkedin",
+                          tags=["Python", ".NET"])
+                self.assertFalse(is_microsoft_cloud_job(job))
+
+    def test_cloud_evidence_cannot_span_independent_fields(self):
+        job = Job("Microsoft", "Acme", "Remote", "https://x/1", "linkedin", tags=["365"])
+        self.assertFalse(is_microsoft_cloud_job(job))
 
 
 if __name__ == "__main__":

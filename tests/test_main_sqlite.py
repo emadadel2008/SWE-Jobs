@@ -29,6 +29,78 @@ class MainSqliteFlowTests(unittest.TestCase):
     def make_db_path(self, tmp):
         return os.path.join(tmp, "jobs.db")
 
+    def test_cloud_filter_applies_to_all_sources_and_preserves_geo_requirements(self):
+        for source in ("linkedin", "linkedin_saudi_v2", "jobzaty", "ats_lever_acme", "wuzzuf"):
+            with self.subTest(source=source):
+                job = Job("Tenant Administrator", "Acme", "Riyadh", "https://x/1", source,
+                          description="Manage Microsoft 365 tenants.")
+                self.assertTrue(main.should_keep_job(job))
+                job.description = "Manage AWS accounts."
+                self.assertFalse(main.should_keep_job(job))
+                job.title = "Azure Administrator"
+                job.location = "London"
+                self.assertFalse(main.should_keep_job(job))
+                job.is_remote = True
+                self.assertTrue(main.should_keep_job(job))
+                job.url = ""
+                self.assertFalse(main.should_keep_job(job))
+
+    def test_only_cloud_jobs_from_any_employer_reach_default_router(self):
+        cloud_job = self.fresh_job(title="Tenant Administrator", url="https://x/cloud",
+                                   source="linkedin", at=self.now)
+        cloud_job.tags = []
+        cloud_job.description = "Manage Microsoft 365 tenants."
+        unrelated = self.fresh_job(title=".NET Developer", url="https://x/unrelated",
+                                   source="linkedin", at=self.now)
+        unrelated.company = "Microsoft"
+        unrelated.tags = [".NET"]
+        sent = []
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self.make_db_path(tmp)
+            self.prime_source(db_path, "linkedin")
+            summary = main.run_bot(
+                db_path=db_path, fetchers=[("LinkedIn", lambda: [cloud_job, unrelated])],
+                sender=lambda job, topics: sent.append((job.title, topics)) or {topics[0]: True},
+                cleanup_func=lambda: None, seed_mode=False, reference_time=self.now,
+            )
+            self.assertEqual(summary.filtered_jobs, 1)
+            self.assertEqual(summary.topic_send_successes, 1)
+            self.assertEqual(sent, [("Tenant Administrator", ["microsoft_cloud"])])
+            with connect(db_path) as conn:
+                self.assertEqual(count_jobs(conn), 1)
+
+    def test_unrelated_legacy_pending_job_is_skipped_even_with_custom_router(self):
+        job = Job("Backend Developer", "Microsoft", "Riyadh", "https://x/old", "linkedin")
+        sent = []
+        with tempfile.TemporaryDirectory() as tmp:
+            with connect(self.make_db_path(tmp)) as conn:
+                job_id, _ = main.upsert_job(conn, job)
+                counts = main.send_pending_jobs(
+                    conn, sender=lambda job, topics: sent.append(topics) or {topics[0]: True},
+                    router=lambda job: ["microsoft_cloud"], reference_time=self.now,
+                )
+                self.assertEqual(counts, (1, 0, 0, 1))
+                self.assertEqual(sent, [])
+                row = conn.execute("SELECT send_status FROM jobs WHERE id = ?", (job_id,)).fetchone()
+                self.assertEqual(row["send_status"], "skipped")
+
+    def test_cloud_backlog_with_failed_retired_topic_uses_only_new_topic(self):
+        job = Job("Azure Engineer", "Acme", "Riyadh", "https://x/cloud-old", "linkedin")
+        sent = []
+        with tempfile.TemporaryDirectory() as tmp:
+            with connect(self.make_db_path(tmp)) as conn:
+                job_id, _ = main.upsert_job(conn, job)
+                main.ensure_topic_deliveries(conn, job_id, ["backend"], None)
+                main.record_delivery_result(conn, job_id, "backend", outcome=main.RETRYABLE,
+                                            error="Prior delivery failed", reference_time=self.now)
+                counts = main.send_pending_jobs(
+                    conn, sender=lambda job, topics: sent.append(topics) or {topics[0]: True},
+                    reference_time=self.now,
+                )
+                self.assertEqual(counts, (1, 1, 0, 0))
+                self.assertEqual(sent, [["microsoft_cloud"]])
+                self.assertEqual(get_sent_topic_keys(conn, job_id), {"microsoft_cloud"})
+
     def prime_source(self, db_path, source, minutes_ago=15):
         previous = self.now - timedelta(minutes=minutes_ago)
         stamp = previous.isoformat().replace("+00:00", "Z")
@@ -44,7 +116,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Riyadh, Saudi Arabia",
             url=url,
             source=source,
-            tags=["Python"],
+            tags=["Python", "Azure"],
             published_at_raw=evidence.raw,
             published_at_earliest=evidence.earliest,
             published_at_latest=evidence.latest,
@@ -60,7 +132,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Cairo, Egypt",
             url="https://wuzzuf.net/jobs/p/backend-1",
             source="wuzzuf",
-            tags=["Python"],
+            tags=["Python", "Azure"],
         )
         second_job = Job(
             title="Backend Developer II",
@@ -68,7 +140,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Cairo, Egypt",
             url="https://wuzzuf.net/jobs/p/backend-2",
             source="wuzzuf",
-            tags=["Python"],
+            tags=["Python", "Azure"],
         )
         sent = []
 
@@ -160,7 +232,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Cairo, Egypt",
             url="https://wuzzuf.net/jobs/p/backend",
             source="wuzzuf",
-            tags=["Python"],
+            tags=["Python", "Azure"],
         )
         calls = []
 
@@ -221,7 +293,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Cairo, Egypt",
             url="https://wuzzuf.net/jobs/p/routing-migration",
             source="wuzzuf",
-            tags=["Python"],
+            tags=["Python", "Azure"],
         )
         calls = []
 
@@ -402,7 +474,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Remote",
             url="https://www.linkedin.com/jobs/view/1234567890",
             source="linkedin",
-            tags=["Data"],
+            tags=["Data", "Microsoft Fabric"],
             is_remote=True,
         )
         sent = []
@@ -507,7 +579,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Remote",
             url="https://wuzzuf.net/jobs/p/frontend",
             source="wuzzuf",
-            tags=["React"],
+            tags=["React", "Azure"],
             is_remote=True,
         )
 
@@ -540,6 +612,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Cairo, Egypt",
             url="https://wuzzuf.net/jobs/p/backend-no-topic",
             source="wuzzuf",
+            tags=["Azure"],
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -598,6 +671,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Riyadh, Saudi Arabia",
             url="https://www.linkedin.com/jobs/view/9999999999",
             source="linkedin",
+            tags=["Azure"],
             published_at_raw=evidence.raw,
             published_at_earliest=evidence.earliest,
             published_at_latest=evidence.latest,
@@ -637,6 +711,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Cairo, Egypt",
             url="https://wuzzuf.net/jobs/p/after-gap",
             source="wuzzuf",
+            tags=["Azure"],
         )
 
         with tempfile.TemporaryDirectory() as tmp:
@@ -668,7 +743,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Cairo, Egypt",
             url="https://wuzzuf.net/jobs/p/recover-after-gap",
             source="wuzzuf",
-            tags=["Python"],
+            tags=["Python", "Azure"],
         )
         fresh_evidence = parse_relative_publication("5 minutes ago", fetched_at=self.now + timedelta(minutes=15))
         second = Job(
@@ -734,7 +809,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Cairo, Egypt",
             url="https://wuzzuf.net/jobs/p/do-not-revive-old",
             source="wuzzuf",
-            tags=["Python"],
+            tags=["Python", "Azure"],
             published_at_raw=old_evidence.raw,
             published_at_earliest=old_evidence.earliest,
             published_at_latest=old_evidence.latest,
@@ -834,7 +909,7 @@ class MainSqliteFlowTests(unittest.TestCase):
                 location="Cairo, Egypt",
                 url=f"https://wuzzuf.net/jobs/p/rate-{i}",
                 source="wuzzuf",
-                tags=["Python"],
+                tags=["Python", "Azure"],
             )
             for i in (1, 2)
         ]
@@ -894,7 +969,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             location="Cairo, Egypt",
             url="https://wuzzuf.net/jobs/p/ambiguous",
             source="wuzzuf",
-            tags=["Python"],
+            tags=["Python", "Azure"],
         )
         calls = []
 
@@ -929,7 +1004,7 @@ class MainSqliteFlowTests(unittest.TestCase):
             url="https://www.jobzaty.com/job/backend-developer-1",
             source="jobzaty",
             source_job_id="backend-developer-1",
-            tags=["تقنية المعلومات", "backend"],
+            tags=["تقنية المعلومات", "backend", "Azure"],
             published_at_raw=evidence.raw,
             published_at_earliest=evidence.earliest,
             published_at_latest=evidence.latest,
@@ -977,7 +1052,7 @@ class MainSqliteFlowTests(unittest.TestCase):
                 url="https://www.linkedin.com/jobs/view/1234509876",
                 source="linkedin",
                 source_job_id="1234509876",
-                tags=["backend"],
+                tags=["backend", "Azure"],
                 published_at_raw=linkedin_evidence.raw,
                 published_at_earliest=linkedin_evidence.earliest,
                 published_at_latest=linkedin_evidence.latest,
@@ -1021,7 +1096,7 @@ class ShadowPromotionTests(unittest.TestCase):
             location="Riyadh, Saudi Arabia",
             url="https://www.linkedin.com/jobs/view/9999999999",
             source=source,
-            tags=[".NET"],
+            tags=[".NET", "Azure"],
             source_job_id="9999999999",
             published_at_raw=evidence.raw,
             published_at_earliest=evidence.earliest,
@@ -1087,6 +1162,7 @@ class ATSSnapshotShadowFlowTests(unittest.TestCase):
             source="ats_greenhouse_hala",
             source_job_id="1",
             original_source="HALA Careers",
+            tags=["Azure"],
         )
         fresh_job = Job(
             title="Site Reliability Engineer",
@@ -1096,6 +1172,7 @@ class ATSSnapshotShadowFlowTests(unittest.TestCase):
             source="ats_greenhouse_hala",
             source_job_id="2",
             original_source="HALA Careers",
+            tags=["Azure"],
         )
         sent = []
 

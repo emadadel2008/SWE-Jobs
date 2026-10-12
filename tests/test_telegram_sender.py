@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import requests
 
@@ -10,7 +10,9 @@ from telegram_sender import (
     UNKNOWN,
     TelegramClient,
     TelegramRateLimiter,
+    send_job,
 )
+from models import Job
 
 
 class FakeResponse:
@@ -24,6 +26,31 @@ class FakeResponse:
 
 
 class TelegramDeliveryTests(unittest.TestCase):
+    def test_cloud_job_uses_configured_thread_279_once(self):
+        job = Job("Azure Engineer", "Acme", "Remote", "https://x/1", "linkedin")
+        client = Mock()
+        client.send_message.return_value = Mock(success=True, outcome=SENT)
+        with patch.dict("os.environ", {"TOPIC_MICROSOFT_CLOUD": "279", "TOPIC_BACKEND": "123"}):
+            result = send_job(job, client=client)
+        self.assertEqual(set(result), {"microsoft_cloud"})
+        client.send_message.assert_called_once()
+        self.assertEqual(client.send_message.call_args.args[1], 279)
+
+    def test_unrelated_job_cannot_be_sent_with_explicit_topic(self):
+        job = Job(".NET Developer", "Microsoft", "Remote", "https://x/1", "linkedin")
+        client = Mock()
+        self.assertEqual(send_job(job, ["microsoft_cloud"], client=client), {})
+        client.send_message.assert_not_called()
+
+    def test_missing_cloud_topic_is_configuration_error_without_fallback(self):
+        from telegram_sender import CONFIG_ERROR
+        job = Job("Azure Engineer", "Acme", "Remote", "https://x/1", "linkedin")
+        client = Mock()
+        with patch.dict("os.environ", {"TOPIC_MICROSOFT_CLOUD": "", "TOPIC_GENERAL": "1"}):
+            result = send_job(job, client=client)
+        self.assertEqual(result["microsoft_cloud"].outcome, CONFIG_ERROR)
+        client.send_message.assert_not_called()
+
     def make_client(self, side_effects, *, retries=0, sleeps=None):
         session = Mock()
         session.post.side_effect = side_effects

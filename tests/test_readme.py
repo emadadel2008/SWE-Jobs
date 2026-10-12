@@ -27,8 +27,10 @@ class ReadmeDocumentationTests(unittest.TestCase):
 
     def test_readme_documents_single_primary_topic_design(self):
         self.assertIn("one primary topic", self.text.lower())
-        self.assertIn("TOPIC_BACKEND", self.text)
-        self.assertIn("TOPIC_AI_ML", self.text)
+        self.assertIn("TOPIC_MICROSOFT_CLOUD", self.text)
+        self.assertIn("279", self.text)
+        self.assertNotIn("TOPIC_BACKEND", self.text)
+        self.assertNotIn("TOPIC_AI_ML", self.text)
         self.assertIn("no longer read by the workflow", self.text)
         self.assertIn("one primary topic per job", self.text.lower())
 
@@ -36,6 +38,8 @@ class ReadmeDocumentationTests(unittest.TestCase):
         self.assertIn("seed_mode", self.text)
         self.assertIn("concurrency", self.text)
         self.assertIn("data branch", self.text)
+        self.assertIn("0 */2 * * *", self.text)
+        self.assertNotIn("7,22,37,52 * * * *", self.text)
 
     def test_readme_documents_vps_runtime(self):
         self.assertIn("VPS Production Runtime", self.text)

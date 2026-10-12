@@ -36,8 +36,8 @@ try:
     from sources import ALL_FETCHERS, SOURCE_POLL_INTERVAL_MINUTES
 except ModuleNotFoundError:  # local flat-file test layout
     from __init__ import ALL_FETCHERS, SOURCE_POLL_INTERVAL_MINUTES
-from models import Job, is_programming_job, passes_geo_filter
-from classifier import is_tech_job
+from models import Job, passes_geo_filter
+from classifier import is_microsoft_cloud_job
 from eligibility import enrich_job_eligibility
 from telegram_sender import (
     CONFIG_ERROR,
@@ -274,11 +274,7 @@ def should_keep_job(job: Job) -> bool:
     if not job.title or not job.url:
         return False
 
-    source = _source_key(job.source)
-    if source in {"linkedin", "linkedin_saudi_v2", "jobzaty"} or source.startswith("ats_"):
-        return is_tech_job(job) and passes_geo_filter(job)
-
-    return is_programming_job(job) and passes_geo_filter(job)
+    return is_microsoft_cloud_job(job) and passes_geo_filter(job)
 
 
 def filter_jobs_for_runtime(jobs: list[Job]) -> list[Job]:
@@ -564,7 +560,7 @@ def send_pending_jobs(
 
     for stored in pending_jobs:
         job = stored.to_job()
-        target_topics = router(job)
+        target_topics = router(job) if should_keep_job(job) else []
 
         if not target_topics:
             set_job_send_status(conn, stored.id, "skipped")

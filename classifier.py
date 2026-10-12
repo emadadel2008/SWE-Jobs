@@ -1,4 +1,4 @@
-"""Lightweight bilingual tech-job classifier used by routing and broad-source filtering.
+"""Microsoft Cloud relevance gate and broad bilingual discovery classifier.
 
 The classifier is intentionally deterministic and auditable. It is not meant to
 replace richer enrichment later; it provides a measured baseline that can be
@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import re
 import unicodedata
 
-from config import CHANNELS, PRIMARY_TOPIC_ORDER
+from config import TECH_CATEGORIES, TECH_CATEGORY_ORDER
 from models import Job, _flatten_tags
 
 _ARABIC_DIACRITICS = re.compile(r"[\u0610-\u061a\u064b-\u065f\u0670\u06d6-\u06ed]")
@@ -85,6 +85,22 @@ GENERAL_TECH_ENGLISH = (
     "product designer",
 )
 
+MICROSOFT_CLOUD_KEYWORDS = (
+    "azure", "microsoft cloud", "microsoft 365", "microsoft365", "m365",
+    "office 365", "office365", "o365", "ms365", "ms 365",
+    "entra", "entraid", "azure ad", "azuread", "aad", "aks",
+    "dynamics 365", "dynamics365", "d365", "d365fo", "d365ce", "d365bc", "microsoft dynamics",
+    "dynamics crm", "dynamics ax", "dynamics nav", "business central",
+    "power platform", "powerplatform", "power apps", "powerapps",
+    "power automate", "powerautomate", "power bi", "powerbi",
+    "power pages", "powerpages", "copilot studio", "dataverse",
+    "sharepoint online", "exchange online", "microsoft teams", "ms teams",
+    "intune", "microsoft endpoint manager", "microsoft defender",
+    "microsoft sentinel", "microsoft purview", "microsoft fabric",
+    "ازور", "أزور", "اجور", "أجور", "مايكروسوفت 365", "ميكروسوفت 365",
+    "ديناميكس 365", "داينمكس 365", "باور بلاتفورم", "باور ابس", "باور بي اي",
+)
+
 
 @dataclass(frozen=True)
 class Classification:
@@ -116,7 +132,7 @@ def _first_match(text: str, patterns) -> str:
 
 
 def classify_job(job: Job) -> Classification:
-    """Classify one job into the single primary topic used by Telegram."""
+    """Classify broad tech jobs for source discovery (not Telegram routing)."""
     text = _job_text(job)
     if not text:
         return Classification(False, None, reason="empty")
@@ -125,8 +141,8 @@ def classify_job(job: Job) -> Classification:
     if excluded:
         return Classification(False, None, excluded, "non_tech_exclusion")
 
-    for topic in PRIMARY_TOPIC_ORDER:
-        english = (CHANNELS.get(topic) or {}).get("keywords", [])
+    for topic in TECH_CATEGORY_ORDER:
+        english = (TECH_CATEGORIES.get(topic) or {}).get("keywords", [])
         matched = _first_match(text, english)
         if not matched:
             matched = _first_match(text, ARABIC_TOPIC_KEYWORDS.get(topic, ()))
@@ -144,3 +160,16 @@ def classify_job(job: Job) -> Classification:
 
 def is_tech_job(job: Job) -> bool:
     return classify_job(job).is_tech
+
+
+def is_microsoft_cloud_job(job: Job) -> bool:
+    """Require explicit product evidence, never an employer-name match."""
+    fields = (job.title, _flatten_tags(job.tags), job.description)
+    return any(_MICROSOFT_CLOUD_PATTERN.search(normalize_text(value)) for value in fields)
+
+
+_MICROSOFT_CLOUD_PATTERN = re.compile(
+    r"(?<!\w)(?:"
+    + "|".join(re.escape(normalize_text(keyword)) for keyword in MICROSOFT_CLOUD_KEYWORDS)
+    + r")(?!\w)"
+)

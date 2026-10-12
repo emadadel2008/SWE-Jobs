@@ -15,15 +15,16 @@ TELEGRAM_ADMIN_CHAT_ID = os.getenv("TELEGRAM_ADMIN_CHAT_ID", "")  # optional pri
 ADMIN_DIGEST_INTERVAL_HOURS = int(os.getenv("ADMIN_DIGEST_INTERVAL_HOURS", "24"))
 
 # ─── Active Telegram Topics ──────────────────────────────────
-# Update 5 uses exactly ONE primary topic per job.  Market/source information
-# is metadata in the message, not another copy of the same Telegram post.
-#
-# Existing retired forum topics may remain in Telegram, but the bot no longer
-# routes new jobs to them.  General is a fallback for relevant tech jobs that
-# do not match a more specific active topic.
+CHANNELS = {
+    "microsoft_cloud": {
+        "thread_env": "TOPIC_MICROSOFT_CLOUD",
+        "name": "Microsoft Cloud",
+    },
+}
 
-CHANNELS = {'general': {'thread_env': 'TOPIC_GENERAL', 'name': '💻 Other Tech'},
- 'backend': {'thread_env': 'TOPIC_BACKEND',
+# Broad categories remain available to source discovery, not Telegram routing.
+TECH_CATEGORIES = {'general': {'name': '💻 Other Tech'},
+ 'backend': {
              'name': '⚙️ Backend',
              'keywords': ['backend',
                           'back-end',
@@ -60,7 +61,7 @@ CHANNELS = {'general': {'thread_env': 'TOPIC_GENERAL', 'name': '💻 Other Tech'
                           '.net developer',
                           'dotnet developer',
                           'c# developer']},
- 'frontend': {'thread_env': 'TOPIC_FRONTEND',
+ 'frontend': {
               'name': '🎨 Frontend',
               'keywords': ['frontend',
                            'front-end',
@@ -85,7 +86,7 @@ CHANNELS = {'general': {'thread_env': 'TOPIC_GENERAL', 'name': '💻 Other Tech'
                            'svelte',
                            'web developer',
                            'web engineer']},
- 'mobile': {'thread_env': 'TOPIC_MOBILE',
+ 'mobile': {
             'name': '📱 Mobile',
             'keywords': ['mobile developer',
                          'mobile engineer',
@@ -107,7 +108,7 @@ CHANNELS = {'general': {'thread_env': 'TOPIC_GENERAL', 'name': '💻 Other Tech'
                          'swiftui',
                          'jetpack compose',
                          'dart developer']},
- 'devops': {'thread_env': 'TOPIC_DEVOPS',
+ 'devops': {
             'name': '🚀 DevOps & Cloud',
             'keywords': ['devops',
                          'dev ops',
@@ -134,7 +135,7 @@ CHANNELS = {'general': {'thread_env': 'TOPIC_GENERAL', 'name': '💻 Other Tech'
                          'systems administrator',
                          'network engineer',
                          'network administrator']},
- 'qa': {'thread_env': 'TOPIC_QA',
+ 'qa': {
         'name': '🧪 QA & Testing',
         'keywords': ['qa engineer',
                      'qa developer',
@@ -154,7 +155,7 @@ CHANNELS = {'general': {'thread_env': 'TOPIC_GENERAL', 'name': '💻 Other Tech'
                      'performance testing',
                      'load testing',
                      'stress testing']},
- 'ai_ml': {'thread_env': 'TOPIC_AI_ML',
+ 'ai_ml': {
            'name': '🤖 Data & AI',
            'keywords': ['machine learning',
                         'ml engineer',
@@ -204,7 +205,7 @@ CHANNELS = {'general': {'thread_env': 'TOPIC_GENERAL', 'name': '💻 Other Tech'
                         'insight analyst',
                         'sql analyst',
                         'excel analyst']},
- 'cybersecurity': {'thread_env': 'TOPIC_CYBERSECURITY',
+ 'cybersecurity': {
                    'name': '🔒 Cybersecurity',
                    'keywords': ['security engineer',
                                 'appsec',
@@ -221,7 +222,7 @@ CHANNELS = {'general': {'thread_env': 'TOPIC_GENERAL', 'name': '💻 Other Tech'
                                 'ethical hacker',
                                 'security operations',
                                 'threat']},
- 'internships': {'thread_env': 'TOPIC_INTERNSHIPS',
+ 'internships': {
                  'name': '🎓 Internships & Fresh',
                  'keywords': ['intern',
                               'internship',
@@ -238,7 +239,7 @@ CHANNELS = {'general': {'thread_env': 'TOPIC_GENERAL', 'name': '💻 Other Tech'
                               'apprenticeship',
                               'working student',
                               'student developer']},
- 'erp': {'thread_env': 'TOPIC_ERP',
+ 'erp': {
          'name': '🏢 ERP & Business Apps',
          'keywords': ['erp developer',
                       'erp consultant',
@@ -275,10 +276,8 @@ CHANNELS = {'general': {'thread_env': 'TOPIC_GENERAL', 'name': '💻 Other Tech'
                       'crm developer',
                       'crm consultant']}}
 
-# First matching category wins.  Internships/Fresh is intentionally first so
-# an entry-level job is posted once there rather than duplicated into its role
-# topic.  Generic tech jobs fall back to ``general``.
-PRIMARY_TOPIC_ORDER = (
+# First matching discovery category wins; generic tech falls back to general.
+TECH_CATEGORY_ORDER = (
     "internships",
     "backend",
     "frontend",
