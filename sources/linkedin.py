@@ -53,13 +53,22 @@ def _fresh_params(**params: str) -> dict[str, str]:
     return merged
 
 
+ARAB_COUNTRY_SEARCH_LOCATIONS = (
+    "Egypt", "Algeria", "Bahrain", "Comoros", "Djibouti", "Iraq",
+    "Jordan", "Kuwait", "Lebanon", "Libya", "Mauritania", "Morocco",
+    "Oman", "Palestine", "Qatar", "Saudi Arabia", "Somalia", "Sudan",
+    "Syria", "Tunisia", "United Arab Emirates", "Yemen",
+)
+
+LINKEDIN_KEYWORDS = (
+    "Azure", "Microsoft 365", "Office 365", "Entra",
+    "Dynamics 365", "Power Platform", "Power BI",
+)
+LINKEDIN_KEYWORD_QUERY = " OR ".join(f'"{keyword}"' for keyword in LINKEDIN_KEYWORDS)
+
 LINKEDIN_SEARCHES: list[dict[str, str]] = [
-    _fresh_params(keywords=keyword, **market)
-    for market in ({"location": "Egypt"}, {"location": "Saudi Arabia"}, {"f_WT": "2"})
-    for keyword in (
-        "Azure", "Microsoft 365", "Office 365", "Entra",
-        "Dynamics 365", "Power Platform", "Power BI",
-    )
+    _fresh_params(keywords=LINKEDIN_KEYWORD_QUERY, location=location)
+    for location in ARAB_COUNTRY_SEARCH_LOCATIONS
 ]
 
 DEFAULT_REQUEST_DELAY_SECONDS = float(os.getenv("LINKEDIN_REQUEST_DELAY", "4"))

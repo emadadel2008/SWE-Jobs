@@ -116,6 +116,8 @@ GitHub Actions is configured for a two-hour schedule, but scheduled workflow exe
 
 A successful source schedules its next normal poll at its configured interval. A failed source retries on the next workflow run even when its normal cadence is slower. Sources that are not due are skipped without blocking the Telegram delivery queue.
 
+Telegram job posts and admin notifications are paused daily from 22:00 to 09:00 in the `Africa/Cairo` timezone. Jobs discovered during that window remain queued for delivery after 09:00. Manual Actions runs can use `test_mode=true` to force a fresh fetch without Telegram delivery or database restore/persistence.
+
 Health intentionally distinguishes a quiet ATS tenant from a broken integration:
 
 - `HEALTHY` — successful fetch with results.

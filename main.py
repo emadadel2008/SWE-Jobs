@@ -18,6 +18,7 @@ import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Callable, Iterable
+from zoneinfo import ZoneInfo
 
 from config import (
     ATS_OBSERVATION_MAX_AGE_MINUTES,
@@ -115,6 +116,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("main")
+CAIRO_TIMEZONE = ZoneInfo("Africa/Cairo")
 
 Fetcher = tuple[str, Callable[[], list[Job]]]
 Sender = Callable[[Job, list[str] | None], dict[str, object]]
@@ -192,6 +194,19 @@ def _is_seed_mode(seed_mode: bool | None = None) -> bool:
     return os.getenv(SEED_MODE_ENV, "").lower() in ("1", "true", "yes")
 
 
+def is_telegram_quiet_hours(now: datetime) -> bool:
+    """Return whether Telegram delivery is paused from 22:00 to 09:00 Cairo time."""
+    cairo_hour = ensure_utc(now).astimezone(CAIRO_TIMEZONE).hour
+    return cairo_hour >= 22 or cairo_hour < 9
+
+
+def _force_poll_all_sources(force_poll_all_sources: bool | None = None) -> bool:
+    """Return whether this run should ignore persisted source poll deadlines."""
+    if force_poll_all_sources is not None:
+        return force_poll_all_sources
+    return os.getenv("FORCE_POLL_ALL_SOURCES", "").lower() in ("1", "true", "yes")
+
+
 def _poll_interval_for(source_key: str, poll_intervals: dict[str, int]) -> int:
     return normalize_poll_interval(poll_intervals.get(source_key, 15))
 
@@ -201,11 +216,15 @@ def _select_due_fetchers(
     fetchers: Iterable[Fetcher],
     poll_intervals: dict[str, int],
     reference_time: datetime,
+    force_poll_all_sources: bool = False,
 ) -> tuple[list[Fetcher], list[str]]:
     """Split configured fetchers into due and not-yet-due sources."""
     due: list[Fetcher] = []
     skipped: list[str] = []
     for display_name, fetcher in fetchers:
+        if force_poll_all_sources:
+            due.append((display_name, fetcher))
+            continue
         source_key = _source_key(display_name)
         interval = _poll_interval_for(source_key, poll_intervals)
         state = get_source_state(conn, source_key)
@@ -535,6 +554,7 @@ def send_pending_jobs(
     router: Router = route_job,
     *,
     reference_time: datetime | None = None,
+    check_live_quiet_hours: bool = False,
 ) -> tuple[int, int, int, int]:
     """Deliver queued jobs with durable per-topic state and Telegram backpressure."""
     pending_jobs = get_jobs_for_sending(conn, limit=limit)
@@ -556,6 +576,7 @@ def send_pending_jobs(
         conn.commit()
 
     queue_rate_limited = False
+    quiet_hours_reached = False
     disabled_topics: set[str] = set()
 
     for stored in pending_jobs:
@@ -611,6 +632,11 @@ def send_pending_jobs(
             continue
 
         for topic_key in topics_to_send:
+            if check_live_quiet_hours and is_telegram_quiet_hours(datetime.now(UTC)):
+                quiet_hours_reached = True
+                log.info("Telegram quiet hours began; pausing the remaining delivery queue.")
+                break
+
             # Claim + commit before send. If the process dies after Telegram accepted
             # the message, the next run recovers this as UNKNOWN rather than blindly
             # retrying and potentially duplicating it.
@@ -662,7 +688,7 @@ def send_pending_jobs(
         processed += 1
         log.info("%s: delivery status=%s", job.title, status)
 
-        if queue_rate_limited:
+        if queue_rate_limited or quiet_hours_reached:
             break
 
     return processed, successes, failures, skipped
@@ -689,12 +715,14 @@ def run_bot(
     reference_time: datetime | None = None,
     production_source_keys: set[str] | None = None,
     source_poll_intervals: dict[str, int] | None = None,
+    force_poll_all_sources: bool | None = None,
 ) -> RunSummary:
     """Run one bot cycle. Parameters are injectable for tests."""
     start = time.time()
     run_reference = ensure_utc(reference_time or datetime.now(UTC)).replace(microsecond=0)
     run_at = iso_utc(run_reference)
     summary = RunSummary(seed_mode=_is_seed_mode(seed_mode))
+    force_poll = _force_poll_all_sources(force_poll_all_sources)
     admin_events: list[str] = []
     fetcher_list = list(fetchers)
     production_keys = set(PRODUCTION_SOURCE_KEYS if production_source_keys is None else production_source_keys)
@@ -735,9 +763,11 @@ def run_bot(
             )
 
         due_fetchers, skipped_due = _select_due_fetchers(
-            conn, fetcher_list, poll_intervals, run_reference
+            conn, fetcher_list, poll_intervals, run_reference, force_poll
         )
         summary.sources_skipped_not_due = len(skipped_due)
+        if force_poll:
+            log.info("Forcing poll for all %s configured sources.", len(due_fetchers))
         if skipped_due:
             log.info("Skipping %s sources until next_poll_at: %s", len(skipped_due), ", ".join(skipped_due))
 
@@ -899,10 +929,18 @@ def run_bot(
             shadow_eligible,
         )
 
+        telegram_quiet = is_telegram_quiet_hours(
+            reference_time if reference_time is not None else datetime.now(UTC)
+        )
+        if telegram_quiet:
+            log.info("Telegram delivery is paused during Cairo quiet hours (22:00-09:00).")
+
         if summary.seed_mode:
             skipped = mark_pending_as_skipped(conn, limit=10**9)
             summary.skipped_jobs = skipped
             log.info("SEED MODE: stored and skipped %s pending jobs.", skipped)
+        elif telegram_quiet:
+            log.info("Telegram delivery deferred; pending jobs remain queued.")
         else:
             processed, successes, failures, skipped = send_pending_jobs(
                 conn,
@@ -910,6 +948,7 @@ def run_bot(
                 sender=sender,
                 router=router,
                 reference_time=run_reference,
+                check_live_quiet_hours=reference_time is None,
             )
             summary.pending_processed = processed
             summary.topic_send_successes = successes
@@ -938,7 +977,10 @@ def run_bot(
         for line in format_source_analytics(analytics_rows, label="Saudi 24h"):
             log.info(line)
 
-        if TELEGRAM_ADMIN_CHAT_ID:
+        admin_quiet = is_telegram_quiet_hours(
+            reference_time if reference_time is not None else datetime.now(UTC)
+        )
+        if TELEGRAM_ADMIN_CHAT_ID and not admin_quiet:
             alert_message = format_event_batch(admin_events)
             if alert_message:
                 alert_result = send_admin_message(alert_message)
