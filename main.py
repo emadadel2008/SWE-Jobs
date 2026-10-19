@@ -194,6 +194,10 @@ def _is_seed_mode(seed_mode: bool | None = None) -> bool:
     return os.getenv(SEED_MODE_ENV, "").lower() in ("1", "true", "yes")
 
 
+def _is_test_mode() -> bool:
+    return os.getenv("TEST_MODE", "").lower() in ("1", "true", "yes")
+
+
 def is_telegram_quiet_hours(now: datetime) -> bool:
     """Return whether Telegram delivery is paused from 22:00 to 09:00 Cairo time."""
     cairo_hour = ensure_utc(now).astimezone(CAIRO_TIMEZONE).hour
@@ -723,6 +727,7 @@ def run_bot(
     run_at = iso_utc(run_reference)
     summary = RunSummary(seed_mode=_is_seed_mode(seed_mode))
     force_poll = _force_poll_all_sources(force_poll_all_sources)
+    test_mode = _is_test_mode()
     admin_events: list[str] = []
     fetcher_list = list(fetchers)
     production_keys = set(PRODUCTION_SOURCE_KEYS if production_source_keys is None else production_source_keys)
@@ -734,10 +739,11 @@ def run_bot(
     log.info("Programming Jobs Bot - Starting run")
     log.info("=" * 60)
 
-    try:
-        cleanup_func()
-    except Exception as exc:
-        log.warning("Cleanup failed (non-critical): %s", exc)
+    if not test_mode:
+        try:
+            cleanup_func()
+        except Exception as exc:
+            log.warning("Cleanup failed (non-critical): %s", exc)
 
     with connect(db_path) as conn:
         summary.expired_backlog_jobs = expire_legacy_backlog_once(
@@ -980,7 +986,7 @@ def run_bot(
         admin_quiet = is_telegram_quiet_hours(
             reference_time if reference_time is not None else datetime.now(UTC)
         )
-        if TELEGRAM_ADMIN_CHAT_ID and not admin_quiet:
+        if TELEGRAM_ADMIN_CHAT_ID and not admin_quiet and not test_mode:
             alert_message = format_event_batch(admin_events)
             if alert_message:
                 alert_result = send_admin_message(alert_message)

@@ -63,6 +63,7 @@ class WorkflowConfigTests(unittest.TestCase):
         self.assertIn("test_mode != 'true'", restore["if"])
         self.assertIn("test_mode != 'true'", save["if"])
         self.assertIn("github.event.inputs.test_mode == 'true'", run["env"]["SEED_MODE"])
+        self.assertIn("TEST_MODE", run["env"])
 
     def test_runtime_env_has_only_active_topic_secrets(self):
         required_envs = [

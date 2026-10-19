@@ -4,7 +4,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -37,6 +37,23 @@ class SourceRuntimeTests(unittest.TestCase):
                 reference_time=datetime(2026, 10, 19, 19, 0, tzinfo=UTC),
             )
             send_pending.assert_not_called()
+
+    def test_test_mode_skips_cleanup_and_admin_telegram_notifications(self):
+        cleanup = Mock()
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.dict(os.environ, {"TEST_MODE": "true"}),
+            patch.object(main, "TELEGRAM_ADMIN_CHAT_ID", "123"),
+            patch("main.send_admin_message") as send_admin,
+        ):
+            main.run_bot(
+                db_path=os.path.join(tmp, "jobs.db"),
+                fetchers=[],
+                cleanup_func=cleanup,
+                reference_time=datetime(2026, 10, 19, 12, 0, tzinfo=UTC),
+            )
+            cleanup.assert_not_called()
+            send_admin.assert_not_called()
 
     def test_success_uses_configured_interval_and_failure_retries_next_cycle(self):
         self.assertEqual(
