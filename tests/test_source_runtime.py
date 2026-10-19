@@ -4,6 +4,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 import sys
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -20,6 +21,39 @@ from source_runtime import (
 class SourceRuntimeTests(unittest.TestCase):
     def setUp(self):
         self.now = datetime(2026, 10, 4, 18, 0, tzinfo=UTC)
+
+    def test_telegram_quiet_hours_follow_cairo_time_and_boundaries(self):
+        self.assertFalse(main.is_telegram_quiet_hours(datetime(2026, 10, 19, 18, 59, tzinfo=UTC)))  # 21:59 Cairo
+        self.assertTrue(main.is_telegram_quiet_hours(datetime(2026, 10, 19, 19, 0, tzinfo=UTC)))   # 22:00 Cairo
+        self.assertTrue(main.is_telegram_quiet_hours(datetime(2026, 10, 20, 5, 59, tzinfo=UTC)))   # 08:59 Cairo
+        self.assertFalse(main.is_telegram_quiet_hours(datetime(2026, 10, 20, 6, 0, tzinfo=UTC)))  # 09:00 Cairo
+
+    def test_quiet_hours_skip_delivery_without_advancing_queue(self):
+        with tempfile.TemporaryDirectory() as tmp, patch("main.send_pending_jobs") as send_pending:
+            main.run_bot(
+                db_path=os.path.join(tmp, "jobs.db"),
+                fetchers=[],
+                cleanup_func=lambda: None,
+                reference_time=datetime(2026, 10, 19, 19, 0, tzinfo=UTC),
+            )
+            send_pending.assert_not_called()
+
+    def test_test_mode_skips_cleanup_and_admin_telegram_notifications(self):
+        cleanup = Mock()
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.dict(os.environ, {"TEST_MODE": "true"}),
+            patch.object(main, "TELEGRAM_ADMIN_CHAT_ID", "123"),
+            patch("main.send_admin_message") as send_admin,
+        ):
+            main.run_bot(
+                db_path=os.path.join(tmp, "jobs.db"),
+                fetchers=[],
+                cleanup_func=cleanup,
+                reference_time=datetime(2026, 10, 19, 12, 0, tzinfo=UTC),
+            )
+            cleanup.assert_not_called()
+            send_admin.assert_not_called()
 
     def test_success_uses_configured_interval_and_failure_retries_next_cycle(self):
         self.assertEqual(
@@ -159,6 +193,47 @@ class SourceRuntimeTests(unittest.TestCase):
                 self.assertEqual(state["poll_interval_minutes"], 30)
                 self.assertEqual(state["health_status"], "IDLE")
                 self.assertEqual(state["next_poll_at"], "2026-10-04T19:00:00Z")
+
+    def test_manual_force_poll_ignores_deadline_then_reschedules_source(self):
+        calls = []
+
+        def fetcher():
+            calls.append("fetch")
+            return []
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "jobs.db")
+            main.run_bot(
+                db_path=db_path,
+                fetchers=[("ATS Greenhouse hala", fetcher)],
+                cleanup_func=lambda: None,
+                reference_time=self.now,
+                source_poll_intervals={"ats_greenhouse_hala": 30},
+            )
+
+            forced = main.run_bot(
+                db_path=db_path,
+                fetchers=[("ATS Greenhouse hala", fetcher)],
+                cleanup_func=lambda: None,
+                reference_time=self.now + timedelta(minutes=15),
+                source_poll_intervals={"ats_greenhouse_hala": 30},
+                force_poll_all_sources=True,
+            )
+            self.assertEqual(forced.source_runs_recorded, 1)
+            self.assertEqual(forced.sources_skipped_not_due, 0)
+            self.assertEqual(calls, ["fetch", "fetch"])
+
+            scheduled = main.run_bot(
+                db_path=db_path,
+                fetchers=[("ATS Greenhouse hala", fetcher)],
+                cleanup_func=lambda: None,
+                reference_time=self.now + timedelta(minutes=30),
+                source_poll_intervals={"ats_greenhouse_hala": 30},
+                force_poll_all_sources=False,
+            )
+            self.assertEqual(scheduled.source_runs_recorded, 0)
+            self.assertEqual(scheduled.sources_skipped_not_due, 1)
+            self.assertEqual(calls, ["fetch", "fetch"])
 
 
 if __name__ == "__main__":

@@ -13,6 +13,14 @@ on:
         options:
           - 'false'
           - 'true'
+      test_mode:
+        description: 'Run a fresh, isolated fetch without Telegram or database persistence'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 permissions:
   contents: write
@@ -31,10 +39,10 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: Checkout main branch
+      - name: Checkout selected branch
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -45,6 +53,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Restore SQLite database from data branch
+        if: github.event.inputs.test_mode != 'true'
         run: |
           # Fetch only the current data-branch tip. The data branch contains a
           # binary SQLite snapshot on every commit, so fetching its full history
@@ -62,15 +71,17 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_GROUP_ID: ${{ secrets.TELEGRAM_GROUP_ID }}
           TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          FORCE_POLL_ALL_SOURCES: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
+          TEST_MODE: ${{ github.event.inputs.test_mode == 'true' && 'true' || 'false' }}
           # Once VPS is production, manual Actions runs are forced to seed mode
           # so a stale data-branch copy can never double-send Telegram jobs.
-          SEED_MODE: ${{ vars.VPS_PRODUCTION == 'true' && 'true' || (github.event.inputs.seed_mode || 'false') }}
+          SEED_MODE: ${{ vars.VPS_PRODUCTION == 'true' || github.event.inputs.test_mode == 'true' || github.event.inputs.seed_mode == 'true' }}
           # Single Microsoft Cloud forum topic (configured thread ID: 279)
           TOPIC_MICROSOFT_CLOUD: ${{ secrets.TOPIC_MICROSOFT_CLOUD }}
         run: python main.py
 
       - name: Save SQLite database to data branch
-        if: always()
+        if: always() && github.event.inputs.test_mode != 'true'
         run: |
           if [ ! -f jobs.db ]; then
             echo "jobs.db was not created; nothing to persist."

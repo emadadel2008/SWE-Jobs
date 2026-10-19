@@ -68,18 +68,17 @@ class LinkedInParserTests(unittest.TestCase):
     def test_search_list_is_intentionally_small(self):
         self.assertLessEqual(len(linkedin.LINKEDIN_SEARCHES), 24)
 
-    def test_production_searches_target_cloud_products_in_existing_markets(self):
-        expected_keywords = {
-            "Azure", "Microsoft 365", "Office 365", "Entra",
-            "Dynamics 365", "Power Platform", "Power BI",
-        }
-        for market in ({"location": "Egypt"}, {"location": "Saudi Arabia"}, {"f_WT": "2"}):
-            searches = [
-                search for search in linkedin.LINKEDIN_SEARCHES
-                if all(search.get(key) == value for key, value in market.items())
-            ]
-            self.assertEqual({search["keywords"] for search in searches}, expected_keywords)
-            self.assertTrue(all("company" not in search for search in searches))
+    def test_production_searches_cover_arab_countries_and_cloud_terms(self):
+        self.assertEqual(
+            {search["location"] for search in linkedin.LINKEDIN_SEARCHES},
+            set(linkedin.ARAB_COUNTRY_SEARCH_LOCATIONS),
+        )
+        self.assertEqual(len(linkedin.LINKEDIN_SEARCHES), 22)
+        for search in linkedin.LINKEDIN_SEARCHES:
+            self.assertEqual(search["keywords"], linkedin.LINKEDIN_KEYWORD_QUERY)
+            self.assertTrue(all(f'"{keyword}"' in search["keywords"] for keyword in linkedin.LINKEDIN_KEYWORDS))
+            self.assertNotIn("f_WT", search)
+            self.assertNotIn("company", search)
 
     def test_fetch_uses_pagination_and_getter(self):
         requested = []
@@ -131,8 +130,7 @@ class LinkedInFreshnessAndActiveTests(unittest.TestCase):
             self.assertEqual(search.get("sortBy"), "DD")
 
     def test_search_coverage_is_still_bounded_for_runtime(self):
-        # 23 searches * 4 seconds default delay is about 92 seconds plus network time.
-        # This stays practical under a 15-minute cron while covering more categories.
+        # One Boolean keyword query per country keeps the 22-country sweep practical.
         self.assertLessEqual(len(linkedin.LINKEDIN_SEARCHES), 24)
 
     def test_parser_skips_closed_or_inactive_cards(self):

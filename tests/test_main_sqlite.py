@@ -24,7 +24,7 @@ from models import Job
 
 class MainSqliteFlowTests(unittest.TestCase):
     def setUp(self):
-        self.now = datetime.now(UTC).replace(microsecond=0)
+        self.now = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
 
     def make_db_path(self, tmp):
         return os.path.join(tmp, "jobs.db")
@@ -1086,7 +1086,7 @@ if __name__ == "__main__":
 
 class ShadowPromotionTests(unittest.TestCase):
     def setUp(self):
-        self.now = datetime.now(UTC).replace(microsecond=0)
+        self.now = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
 
     def _fresh(self, source):
         evidence = parse_relative_publication("5 minutes ago", fetched_at=self.now)

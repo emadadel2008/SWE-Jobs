@@ -49,8 +49,21 @@ class WorkflowConfigTests(unittest.TestCase):
     def test_manual_seed_mode_input_is_available(self):
         self.assertIn("seed_mode:", self.text)
         self.assertIn("Store fetched jobs without sending them", self.text)
-        self.assertIn("github.event.inputs.seed_mode || 'false'", self.text)
         self.assertIn("SEED_MODE:", self.text)
+        self.assertEqual(
+            self.data["jobs"]["run-bot"]["steps"][0]["with"]["ref"],
+            "${{ github.ref }}",
+        )
+
+    def test_manual_test_mode_isolated_from_database_and_telegram(self):
+        self.assertIn("test_mode:", self.text)
+        restore = next(step for step in self.data["jobs"]["run-bot"]["steps"] if step["name"] == "Restore SQLite database from data branch")
+        save = next(step for step in self.data["jobs"]["run-bot"]["steps"] if step["name"] == "Save SQLite database to data branch")
+        run = next(step for step in self.data["jobs"]["run-bot"]["steps"] if step["name"] == "Run bot")
+        self.assertIn("test_mode != 'true'", restore["if"])
+        self.assertIn("test_mode != 'true'", save["if"])
+        self.assertIn("github.event.inputs.test_mode == 'true'", run["env"]["SEED_MODE"])
+        self.assertIn("TEST_MODE", run["env"])
 
     def test_runtime_env_has_only_active_topic_secrets(self):
         required_envs = [
@@ -123,7 +136,13 @@ class WorkflowConfigTests(unittest.TestCase):
 
     def test_manual_actions_are_forced_to_seed_after_vps_cutover(self):
         self.assertIn("vars.VPS_PRODUCTION == 'true'", self.text)
-        self.assertIn("&& 'true'", self.text)
+
+    def test_manual_actions_force_source_polling(self):
+        env = next(step["env"] for step in self.data["jobs"]["run-bot"]["steps"] if step["name"] == "Run bot")
+        self.assertEqual(
+            env["FORCE_POLL_ALL_SOURCES"],
+            "${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}",
+        )
 
 
 if __name__ == "__main__":
