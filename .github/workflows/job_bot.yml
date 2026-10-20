@@ -21,6 +21,18 @@ on:
         options:
           - 'false'
           - 'true'
+      send_review_candidates:
+        description: 'Send only explicitly approved, previously reviewed stale candidates'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+      review_candidate_urls:
+        description: 'Exact reviewed job URLs to send, one per line (requires approval above)'
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -67,6 +79,7 @@ jobs:
           fi
 
       - name: Run bot
+        if: github.event.inputs.send_review_candidates != 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_GROUP_ID: ${{ secrets.TELEGRAM_GROUP_ID }}
@@ -79,6 +92,16 @@ jobs:
           # Single Microsoft Cloud forum topic (configured thread ID: 279)
           TOPIC_MICROSOFT_CLOUD: ${{ secrets.TOPIC_MICROSOFT_CLOUD }}
         run: python main.py
+
+      - name: Send approved review candidates
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.send_review_candidates == 'true'
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_GROUP_ID: ${{ secrets.TELEGRAM_GROUP_ID }}
+          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
+          TOPIC_MICROSOFT_CLOUD: ${{ secrets.TOPIC_MICROSOFT_CLOUD }}
+          REVIEW_CANDIDATE_URLS: ${{ github.event.inputs.review_candidate_urls }}
+        run: python send_review_candidates.py
 
       - name: Save SQLite database to data branch
         if: always() && github.event.inputs.test_mode != 'true'

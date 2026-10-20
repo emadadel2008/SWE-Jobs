@@ -526,6 +526,15 @@ def _delivery_deadline(first_seen_at: str) -> str:
     return iso_utc(deadline)
 
 
+def _stored_delivery_deadline(stored) -> str:
+    deadline_start = (
+        stored.last_seen_at
+        if stored.freshness_reason == "manual_review_approved"
+        else stored.first_seen_at
+    )
+    return _delivery_deadline(deadline_start)
+
+
 def _coerce_send_result(value: object) -> TelegramSendResult:
     """Keep test/custom senders backward compatible with bool results."""
     if isinstance(value, TelegramSendResult):
@@ -576,9 +585,10 @@ def send_pending_jobs(
     *,
     reference_time: datetime | None = None,
     check_live_quiet_hours: bool = False,
+    job_ids: set[int] | None = None,
 ) -> tuple[int, int, int, int]:
     """Deliver queued jobs with durable per-topic state and Telegram backpressure."""
-    pending_jobs = get_jobs_for_sending(conn, limit=limit)
+    pending_jobs = get_jobs_for_sending(conn, limit=limit, job_ids=job_ids)
     processed = 0
     successes = 0
     failures = 0
@@ -633,7 +643,7 @@ def send_pending_jobs(
             )
             continue
 
-        deadline_at = _delivery_deadline(stored.first_seen_at)
+        deadline_at = _stored_delivery_deadline(stored)
         ensure_topic_deliveries(conn, stored.id, target_topics, deadline_at)
         conn.commit()  # durable outbox before any network call
 
