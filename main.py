@@ -21,9 +21,9 @@ from typing import Callable, Iterable
 from zoneinfo import ZoneInfo
 
 from config import (
+    FRESH_ONLY,
     ATS_OBSERVATION_MAX_AGE_MINUTES,
     DEFAULT_SOURCE_FRESHNESS_POLICY,
-    DISCOVERY_ONLY_SOURCE_KEYS,
     LEGACY_BACKLOG_MAX_AGE_MINUTES,
     MAX_JOBS_PER_RUN,
     PENDING_SEND_MAX_AGE_MINUTES,
@@ -51,9 +51,10 @@ from telegram_sender import (
 )
 from cleanup import cleanup_join_messages
 from freshness import (
+    FRESH,
+    FreshnessGateDecision,
     BASELINE,
     UNCERTAIN,
-    FreshnessGateDecision,
     PublicationEvidence,
     ensure_utc,
     evaluate_new_posting,
@@ -86,6 +87,7 @@ from db import (
     expire_legacy_backlog_once,
     expire_stale_unsent_jobs,
     get_jobs_for_sending,
+    get_unsent_age_rejected_jobs,
     get_job_freshness_state,
     get_job_primary_source,
     get_job_send_status,
@@ -200,6 +202,8 @@ def _is_test_mode() -> bool:
 
 def is_telegram_quiet_hours(now: datetime) -> bool:
     """Return whether Telegram delivery is paused from 22:00 to 09:00 Cairo time."""
+    if os.getenv("ALLOW_QUIET_HOURS_SEND", "").lower() in ("1", "true", "yes"):
+        return False
     cairo_hour = ensure_utc(now).astimezone(CAIRO_TIMEZONE).hour
     return cairo_hour >= 22 or cairo_hour < 9
 
@@ -292,32 +296,40 @@ def fetch_all_jobs(
     return all_jobs, source_metrics
 
 
+def _job_filter_rejection(job: Job) -> str:
+    """Return the first runtime quality-filter reason, if the job is rejected."""
+    if not job.title or not job.url:
+        return "missing_title" if not job.title else "missing_url"
+    if not is_microsoft_cloud_job(job):
+        return "not_microsoft_cloud"
+    if not is_target_microsoft_cloud_role(job):
+        return "role_not_in_filter"
+    if not passes_geo_filter(job):
+        return "outside_target_geography"
+    return ""
+
+
 def should_keep_job(job: Job) -> bool:
     """Runtime quality filter."""
-    if not job.title or not job.url:
-        return False
-
-    return (
-        is_microsoft_cloud_job(job)
-        and is_target_microsoft_cloud_role(job)
-        and passes_geo_filter(job)
-    )
-
-
-def _log_review_candidate(job: Job, status: str, reason: str) -> None:
-    log.info(
-        "Review candidate (not auto-sent; freshness=%s, reason=%s): %s | %s | %s",
-        status,
-        reason,
-        job.title,
-        job.source,
-        job.url,
-    )
+    return not _job_filter_rejection(job)
 
 
 def filter_jobs_for_runtime(jobs: list[Job]) -> list[Job]:
     """Apply the bot's runtime filter rules."""
-    return [job for job in jobs if should_keep_job(job)]
+    kept: list[Job] = []
+    for job in jobs:
+        reason = _job_filter_rejection(job)
+        if reason:
+            log.info(
+                "Job gate: outcome=filtered reason=%s source=%s title=%r url=%s",
+                reason,
+                _source_key(job.source),
+                job.title,
+                job.url,
+            )
+        else:
+            kept.append(job)
+    return kept
 
 
 def _publication_evidence(job: Job) -> PublicationEvidence:
@@ -343,7 +355,11 @@ def _policy_for_source(source_key: str) -> dict[str, object]:
 
 
 def _is_shadow_source(source_key: str, production_source_keys: set[str]) -> bool:
-    return _source_key(source_key) not in {_source_key(value) for value in production_source_keys}
+    normalized = _source_key(source_key)
+    production_keys = {_source_key(value) for value in production_source_keys}
+    return normalized not in production_keys and not (
+        "ats_*" in production_keys and normalized.startswith("ats_")
+    )
 
 
 def _has_coverage_gap(
@@ -351,6 +367,8 @@ def _has_coverage_gap(
     source_key: str,
     reference_time: datetime,
 ) -> bool:
+    if not FRESH_ONLY:
+        return False
     if not previous_success_at:
         return False
     try:
@@ -396,20 +414,25 @@ def persist_filtered_jobs(
         metrics = source_metrics.setdefault(source_key, SourceCycleMetrics(status="ok"))
         context = source_context.get(source_key, SourceContext(False, None))
         policy = _policy_for_source(source_key)
+        evidence = _publication_evidence(job)
         decision = evaluate_new_posting(
-            _publication_evidence(job),
+            evidence,
             source_was_baselined=context.was_baselined,
             previous_success_at=context.previous_success_at,
             max_age_seconds=int(policy["max_age_seconds"]),
             uncertain_fallback=str(policy.get("uncertain_fallback", "NONE")),
             reference_time=now,
+        ) if FRESH_ONLY else FreshnessGateDecision(FRESH, "age_limit_disabled", True)
+        log.info(
+            "Job freshness: source=%s status=%s reason=%s publication_precision=%s "
+            "title=%r url=%s",
+            source_key,
+            decision.status,
+            decision.reason,
+            evidence.precision,
+            job.title,
+            job.url,
         )
-        if context.was_baselined and source_key in {_source_key(value) for value in DISCOVERY_ONLY_SOURCE_KEYS}:
-            decision = FreshnessGateDecision(
-                UNCERTAIN,
-                "discovery_only_source",
-                False,
-            )
         job_id, is_new = upsert_job(conn, job)
         record_source_observation(
             conn,
@@ -430,6 +453,25 @@ def persist_filtered_jobs(
             primary_source = _source_key(get_job_primary_source(conn, job_id))
             is_production_source = not _is_shadow_source(source_key, production_source_keys)
 
+            if (
+                not FRESH_ONLY
+                and is_production_source
+                and existing_status in {"expired", "shadow", "skipped"}
+            ):
+                states = get_topic_delivery_states(conn, job_id)
+                if not any(
+                    state["status"] in {"sent", "unknown", "sending", "failed_permanent", "config_error"}
+                    for state in states.values()
+                ):
+                    _queue_without_age_limit(conn, job_id)
+                    fresh_new += 1
+                    metrics.fresh_new_jobs += 1
+                    log.info(
+                        "Job gate: outcome=requeued reason=age_limit_disabled "
+                        "previous_status=%s source=%s title=%r url=%s",
+                        existing_status, source_key, job.title, job.url,
+                    )
+                    continue
             # Recover only jobs that were previously rejected because freshness
             # evidence was insufficient, then later gain trustworthy fresh proof
             # from the same production source. Never revive jobs that were truly
@@ -448,30 +490,77 @@ def persist_filtered_jobs(
                 fresh_new += 1
                 metrics.fresh_new_jobs += 1
                 log.info(
-                    "Recovered expired job %s after stronger freshness evidence from %s.",
-                    job_id,
+                    "Job gate: outcome=recovered freshness=%s reason=%s source=%s title=%r url=%s",
+                    decision.status,
+                    decision.reason,
                     source_key,
+                    job.title,
+                    job.url,
                 )
                 continue
 
-            # Non-production observations must never poison production discovery.
-            # A shadow/discovery-only source may see the opening first and store it
-            # as shadow, skipped, or expired. If a *different* production source
-            # later sees the same cluster with trustworthy fresh evidence, promote
-            # that cluster into the delivery queue. Ambiguous/sent/retry states are
-            # deliberately excluded to avoid duplicate Telegram delivery.
+            # A fresh posting from another enabled source can rescue a cluster
+            # that was never delivered. Preserve sent and ambiguous delivery states
+            # to avoid a duplicate Telegram post.
             if (
                 is_production_source
                 and primary_source != source_key
-                and _is_shadow_source(primary_source, production_source_keys)
                 and existing_status in {"shadow", "skipped", "expired"}
             ):
-                set_job_freshness_state(conn, job_id, decision.status, decision.reason)
                 if decision.send_eligible:
+                    set_job_freshness_state(conn, job_id, decision.status, decision.reason)
                     set_job_primary_source(conn, job_id, source_key, job.source_job_id)
                     set_job_send_status(conn, job_id, "pending")
                     fresh_new += 1
                     metrics.fresh_new_jobs += 1
+                    log.info(
+                        "Job gate: outcome=promoted_from_%s freshness=%s reason=%s "
+                        "source=%s title=%r url=%s",
+                        existing_status,
+                        decision.status,
+                        decision.reason,
+                        source_key,
+                        job.title,
+                        job.url,
+                    )
+                else:
+                    log.info(
+                        "Job gate: outcome=not_promoted freshness=%s reason=%s "
+                        "existing_status=%s source=%s title=%r url=%s",
+                        decision.status,
+                        decision.reason,
+                        existing_status,
+                        source_key,
+                        job.title,
+                        job.url,
+                    )
+            elif existing_status == "sent":
+                log.info(
+                    "Job gate: outcome=duplicate_already_sent source=%s title=%r url=%s",
+                    source_key,
+                    job.title,
+                    job.url,
+                )
+            elif existing_status in {"unknown", "retry", "partial"}:
+                log.info(
+                    "Job gate: outcome=existing_delivery_preserved status=%s source=%s "
+                    "title=%r url=%s",
+                    existing_status,
+                    source_key,
+                    job.title,
+                    job.url,
+                )
+            else:
+                log.info(
+                    "Job gate: outcome=duplicate_cluster freshness=%s reason=%s "
+                    "status=%s source=%s title=%r url=%s",
+                    decision.status,
+                    decision.reason,
+                    existing_status,
+                    source_key,
+                    job.title,
+                    job.url,
+                )
             continue
 
         inserted += 1
@@ -485,13 +574,37 @@ def persist_filtered_jobs(
                 set_job_send_status(conn, job_id, "shadow")
                 shadow_eligible += 1
                 metrics.shadow_eligible_jobs += 1
-                _log_review_candidate(job, "SHADOW", "source_not_production")
+                log.info(
+                    "Job gate: outcome=shadow freshness=%s reason=source_not_enabled "
+                    "source=%s title=%r url=%s",
+                    decision.status,
+                    source_key,
+                    job.title,
+                    job.url,
+                )
+            else:
+                log.info(
+                    "Job gate: outcome=queued freshness=%s reason=%s source=%s title=%r url=%s",
+                    decision.status,
+                    decision.reason,
+                    source_key,
+                    job.title,
+                    job.url,
+                )
             continue
 
         if decision.status == BASELINE:
             set_job_send_status(conn, job_id, "skipped")
             baseline_skipped += 1
             metrics.baseline_skipped_jobs += 1
+            log.info(
+                "Job gate: outcome=baseline freshness=%s reason=%s source=%s title=%r url=%s",
+                decision.status,
+                decision.reason,
+                source_key,
+                job.title,
+                job.url,
+            )
         else:
             set_job_send_status(conn, job_id, "expired")
             expired_new += 1
@@ -499,7 +612,15 @@ def persist_filtered_jobs(
             if decision.status == UNCERTAIN:
                 uncertain_new += 1
                 metrics.uncertain_new_jobs += 1
-        _log_review_candidate(job, decision.status, decision.reason)
+            log.info(
+                "Job gate: outcome=%s freshness=%s reason=%s source=%s title=%r url=%s",
+                "uncertain" if decision.status == UNCERTAIN else "expired",
+                decision.status,
+                decision.reason,
+                source_key,
+                job.title,
+                job.url,
+            )
 
     conn.commit()
     return (
@@ -524,15 +645,6 @@ def _parse_iso(value: str) -> datetime:
 def _delivery_deadline(first_seen_at: str) -> str:
     deadline = _parse_iso(first_seen_at) + timedelta(minutes=PENDING_SEND_MAX_AGE_MINUTES)
     return iso_utc(deadline)
-
-
-def _stored_delivery_deadline(stored) -> str:
-    deadline_start = (
-        stored.last_seen_at
-        if stored.freshness_reason == "manual_review_approved"
-        else stored.first_seen_at
-    )
-    return _delivery_deadline(deadline_start)
 
 
 def _coerce_send_result(value: object) -> TelegramSendResult:
@@ -585,10 +697,9 @@ def send_pending_jobs(
     *,
     reference_time: datetime | None = None,
     check_live_quiet_hours: bool = False,
-    job_ids: set[int] | None = None,
 ) -> tuple[int, int, int, int]:
     """Deliver queued jobs with durable per-topic state and Telegram backpressure."""
-    pending_jobs = get_jobs_for_sending(conn, limit=limit, job_ids=job_ids)
+    pending_jobs = get_jobs_for_sending(conn, limit=limit)
     processed = 0
     successes = 0
     failures = 0
@@ -643,7 +754,9 @@ def send_pending_jobs(
             )
             continue
 
-        deadline_at = _stored_delivery_deadline(stored)
+        deadline_at = _delivery_deadline(stored.first_seen_at) if FRESH_ONLY else ""
+        if not FRESH_ONLY:
+            conn.execute("UPDATE job_sends SET deadline_at = NULL WHERE job_id = ?", (stored.id,))
         ensure_topic_deliveries(conn, stored.id, target_topics, deadline_at)
         conn.commit()  # durable outbox before any network call
 
@@ -735,6 +848,34 @@ def mark_pending_as_skipped(conn, limit: int = MAX_JOBS_PER_RUN) -> int:
     return skipped
 
 
+def _queue_without_age_limit(conn, job_id: int) -> None:
+    conn.execute(
+        "UPDATE job_sends SET status = 'queued', deadline_at = NULL, "
+        "next_attempt_at = NULL WHERE job_id = ? AND status = 'expired'",
+        (job_id,),
+    )
+    set_job_freshness_state(conn, job_id, FRESH, "age_limit_disabled")
+    set_job_send_status(conn, job_id, "pending")
+
+
+def requeue_unsent_without_age_limit(conn, production_source_keys: set[str]) -> int:
+    """Reconsider stored, undelivered matches without resetting delivery history."""
+    count = 0
+    for stored in get_unsent_age_rejected_jobs(conn):
+        if _is_shadow_source(stored.source, production_source_keys):
+            continue
+        if not should_keep_job(stored.to_job()):
+            continue
+        _queue_without_age_limit(conn, stored.id)
+        count += 1
+        log.info(
+            "Job gate: outcome=requeued reason=age_limit_disabled source=%s title=%r url=%s",
+            stored.source, stored.title, stored.url,
+        )
+    conn.commit()
+    return count
+
+
 def run_bot(
     db_path: str = DB_FILE,
     fetchers: Iterable[Fetcher] = ALL_FETCHERS,
@@ -773,16 +914,18 @@ def run_bot(
             log.warning("Cleanup failed (non-critical): %s", exc)
 
     with connect(db_path) as conn:
+        if not FRESH_ONLY and not summary.seed_mode:
+            requeue_unsent_without_age_limit(conn, production_keys)
         summary.expired_backlog_jobs = expire_legacy_backlog_once(
             conn,
             max_age_minutes=LEGACY_BACKLOG_MAX_AGE_MINUTES,
             reference_time=run_reference,
-        )
+        ) if FRESH_ONLY else 0
         summary.expired_queue_jobs = expire_stale_unsent_jobs(
             conn,
             max_age_minutes=PENDING_SEND_MAX_AGE_MINUTES,
             reference_time=run_reference,
-        )
+        ) if FRESH_ONLY else 0
         summary.ambiguous_deliveries_recovered = recover_stale_sending_deliveries(
             conn,
             stale_after_minutes=10,

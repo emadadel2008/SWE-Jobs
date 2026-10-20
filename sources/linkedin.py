@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import Callable
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
-from config import LINKEDIN_SEARCH_WINDOW_SECONDS
+from config import FRESH_ONLY, LINKEDIN_FRESHNESS_SECONDS
 from freshness import (
     PRECISION_EXACT,
     PRECISION_NONE,
@@ -40,9 +40,11 @@ SEARCH_URL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/se
 BASE_URL = "https://www.linkedin.com"
 
 # Keep this intentionally small. LinkedIn is a high-risk/fragile source.
-# Search two weeks for review; the delivery freshness gate remains two hours.
-DEFAULT_SEARCH_WINDOW_SECONDS = LINKEDIN_SEARCH_WINDOW_SECONDS
-LINKEDIN_DEFAULT_PARAMS = {"f_TPR": f"r{DEFAULT_SEARCH_WINDOW_SECONDS}", "sortBy": "DD"}
+# The old two-hour cutoff is opt-in; normal searches have no age limit.
+DEFAULT_FRESHNESS_SECONDS = LINKEDIN_FRESHNESS_SECONDS
+LINKEDIN_DEFAULT_PARAMS = {"sortBy": "DD"}
+if FRESH_ONLY:
+    LINKEDIN_DEFAULT_PARAMS["f_TPR"] = f"r{DEFAULT_FRESHNESS_SECONDS}"
 
 
 def _fresh_params(**params: str) -> dict[str, str]:
@@ -162,7 +164,7 @@ def fetch_linkedin(
             parsed = parse_linkedin_html(
                 page_html,
                 search_params=params,
-                max_age_seconds=DEFAULT_SEARCH_WINDOW_SECONDS,
+                max_age_seconds=DEFAULT_FRESHNESS_SECONDS if FRESH_ONLY else None,
             )
             for job in parsed:
                 normalized_url = canonicalize_linkedin_url(job.url)

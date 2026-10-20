@@ -21,18 +21,19 @@ on:
         options:
           - 'false'
           - 'true'
-      send_review_candidates:
-        description: 'Send only explicitly approved, previously reviewed stale candidates'
+      allow_quiet_hours_send:
+        description: 'Explicitly allow this manual run to send during Cairo quiet hours'
         required: false
         default: 'false'
+        type: boolean
+      delivery_limit:
+        description: 'Maximum jobs to process in this manual run'
+        required: false
+        default: '100'
         type: choice
         options:
-          - 'false'
-          - 'true'
-      review_candidate_urls:
-        description: 'Exact reviewed job URLs to send, one per line (requires approval above)'
-        required: false
-        type: string
+          - '1'
+          - '100'
 
 permissions:
   contents: write
@@ -64,6 +65,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Run tests
+        run: python -m unittest discover -s tests -q
+
       - name: Restore SQLite database from data branch
         if: github.event.inputs.test_mode != 'true'
         run: |
@@ -79,29 +83,20 @@ jobs:
           fi
 
       - name: Run bot
-        if: github.event.inputs.send_review_candidates != 'true'
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_GROUP_ID: ${{ secrets.TELEGRAM_GROUP_ID }}
           TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
           FORCE_POLL_ALL_SOURCES: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
           TEST_MODE: ${{ github.event.inputs.test_mode == 'true' && 'true' || 'false' }}
+          ALLOW_QUIET_HOURS_SEND: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.allow_quiet_hours_send == 'true' && 'true' || 'false' }}
+          MAX_JOBS_PER_RUN: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.delivery_limit || '100' }}
           # Once VPS is production, manual Actions runs are forced to seed mode
           # so a stale data-branch copy can never double-send Telegram jobs.
           SEED_MODE: ${{ vars.VPS_PRODUCTION == 'true' || github.event.inputs.test_mode == 'true' || github.event.inputs.seed_mode == 'true' }}
           # Single Microsoft Cloud forum topic (configured thread ID: 279)
           TOPIC_MICROSOFT_CLOUD: ${{ secrets.TOPIC_MICROSOFT_CLOUD }}
         run: python main.py
-
-      - name: Send approved review candidates
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.send_review_candidates == 'true'
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_GROUP_ID: ${{ secrets.TELEGRAM_GROUP_ID }}
-          TELEGRAM_ADMIN_CHAT_ID: ${{ secrets.TELEGRAM_ADMIN_CHAT_ID }}
-          TOPIC_MICROSOFT_CLOUD: ${{ secrets.TOPIC_MICROSOFT_CLOUD }}
-          REVIEW_CANDIDATE_URLS: ${{ github.event.inputs.review_candidate_urls }}
-        run: python send_review_candidates.py
 
       - name: Save SQLite database to data branch
         if: always() && github.event.inputs.test_mode != 'true'

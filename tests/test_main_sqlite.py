@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from models import Job
 
 class MainSqliteFlowTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.object(main, "FRESH_ONLY", True))
         self.now = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
 
     def make_db_path(self, tmp):
@@ -722,7 +724,7 @@ class MainSqliteFlowTests(unittest.TestCase):
                 self.assertEqual(row["send_status"], "expired")
                 self.assertEqual(row["freshness_status"], "TOO_OLD")
 
-    def test_linkedin_without_publication_time_is_only_a_review_candidate(self):
+    def test_linkedin_without_publication_time_uses_bounded_search_window(self):
         job = Job(
             title="Azure Engineer",
             company="Acme",
@@ -747,10 +749,11 @@ class MainSqliteFlowTests(unittest.TestCase):
                 )
 
             self.assertEqual(summary.inserted_jobs, 1)
-            self.assertEqual(summary.uncertain_new_jobs, 1)
-            self.assertEqual(sent, [])
+            self.assertEqual(summary.fresh_new_jobs, 1)
+            self.assertEqual(summary.topic_send_successes, 1)
+            self.assertEqual(sent, ["Azure Engineer"])
             self.assertTrue(any(
-                "Review candidate" in line and job.url in line
+                "reason=source_window_current_result publication_precision=NONE" in line
                 for line in captured.output
             ))
 
@@ -1045,7 +1048,7 @@ class MainSqliteFlowTests(unittest.TestCase):
                 self.assertEqual(get_jobs_for_sending(conn), [])
             self.assertEqual(calls, ["Backend Developer"])
 
-    def test_discovery_only_source_never_queues_telegram_even_with_fresh_timestamp(self):
+    def test_jobzaty_with_fresh_publication_time_is_sent(self):
         evidence = parse_relative_publication("5 minutes ago", fetched_at=self.now)
         job = Job(
             title="Backend Software Developer",
@@ -1078,20 +1081,20 @@ class MainSqliteFlowTests(unittest.TestCase):
                 source_poll_intervals={"jobzaty": 60},
             )
             self.assertEqual(summary.inserted_jobs, 1)
-            self.assertEqual(summary.fresh_new_jobs, 0)
-            self.assertEqual(summary.topic_send_successes, 0)
-            self.assertEqual(calls, [])
+            self.assertEqual(summary.fresh_new_jobs, 1)
+            self.assertEqual(summary.topic_send_successes, 1)
+            self.assertEqual(len(calls), 1)
 
             with connect(db_path) as conn:
                 row = conn.execute(
                     "SELECT send_status, freshness_status, freshness_reason FROM jobs LIMIT 1"
                 ).fetchone()
-                self.assertEqual(row["send_status"], "expired")
-                self.assertEqual(row["freshness_status"], "UNCERTAIN")
-                self.assertEqual(row["freshness_reason"], "discovery_only_source")
+                self.assertEqual(row["send_status"], "sent")
+                self.assertEqual(row["freshness_status"], "FRESH")
+                self.assertEqual(row["freshness_reason"], "publication_time_fresh")
 
-            # A discovery-only observation must not suppress a later fresh
-            # production observation of the same real-world opening.
+            # A second source observing the same opening must not cause a
+            # duplicate Telegram post.
             linkedin_evidence = parse_relative_publication(
                 "3 minutes ago", fetched_at=self.now + timedelta(minutes=5)
             )
@@ -1121,14 +1124,45 @@ class MainSqliteFlowTests(unittest.TestCase):
                 seed_mode=False,
                 reference_time=self.now + timedelta(minutes=5),
             )
-            self.assertEqual(promoted.fresh_new_jobs, 1)
-            self.assertEqual(promoted.topic_send_successes, 1)
-            self.assertEqual(promoted_calls, ["linkedin"])
+            self.assertEqual(promoted.fresh_new_jobs, 0)
+            self.assertEqual(promoted.topic_send_successes, 0)
+            self.assertEqual(promoted_calls, [])
             with connect(db_path) as conn:
                 rows = conn.execute("SELECT source, send_status FROM jobs").fetchall()
                 self.assertEqual(len(rows), 1)
-                self.assertEqual(rows[0]["source"], "linkedin")
+                self.assertEqual(rows[0]["source"], "jobzaty")
                 self.assertEqual(rows[0]["send_status"], "sent")
+
+    def test_jobzaty_without_publication_time_uses_recent_observation_fallback(self):
+        job = Job(
+            title="Azure Engineer",
+            company="Saudi Tech Co",
+            location="Riyadh, Saudi Arabia",
+            url="https://www.jobzaty.com/job/azure-engineer-2",
+            source="jobzaty",
+            tags=["Azure", "Azure Engineer"],
+        )
+        sent = []
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = self.make_db_path(tmp)
+            self.prime_source(db_path, "jobzaty", minutes_ago=60)
+            summary = main.run_bot(
+                db_path=db_path,
+                fetchers=[("Jobzaty", lambda: [job])],
+                sender=lambda job_obj, topics: sent.append(job_obj.url) or {topics[0]: True},
+                router=lambda job_obj: ["microsoft_cloud"],
+                cleanup_func=lambda: None,
+                seed_mode=False,
+                reference_time=self.now,
+            )
+            self.assertEqual(summary.fresh_new_jobs, 1)
+            self.assertEqual(summary.topic_send_successes, 1)
+            self.assertEqual(sent, [job.url])
+            with connect(db_path) as conn:
+                row = conn.execute(
+                    "SELECT freshness_reason FROM jobs WHERE url = ?", (job.url,)
+                ).fetchone()
+                self.assertEqual(row["freshness_reason"], "recent_observation_after_success")
 
 
 if __name__ == "__main__":
@@ -1136,6 +1170,7 @@ if __name__ == "__main__":
 
 class ShadowPromotionTests(unittest.TestCase):
     def setUp(self):
+        self.enterContext(patch.object(main, "FRESH_ONLY", True))
         self.now = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
 
     def _fresh(self, source):
@@ -1231,10 +1266,89 @@ class ShadowPromotionTests(unittest.TestCase):
                 self.assertEqual(row["source"], "linkedin_saudi_v2")
                 self.assertEqual(row["send_status"], "sent")
 
+    def test_fresh_cross_source_posting_can_recover_an_undelivered_expired_cluster(self):
+        old_evidence = parse_relative_publication("3 hours ago", fetched_at=self.now)
+        stale_job = self._fresh("linkedin")
+        stale_job.published_at_raw = old_evidence.raw
+        stale_job.published_at_earliest = old_evidence.earliest
+        stale_job.published_at_latest = old_evidence.latest
+        stale_job.published_at_est = old_evidence.estimate
+        stale_job.published_precision = old_evidence.precision
+        stale_job.time_semantics = old_evidence.semantics
 
-class ATSSnapshotShadowFlowTests(unittest.TestCase):
-    def test_ats_snapshot_source_baselines_then_marks_new_tech_job_shadow_without_sending(self):
-        now = datetime.now(UTC).replace(microsecond=0)
+        fresh_time = self.now + timedelta(minutes=10)
+        fresh_evidence = parse_relative_publication("5 minutes ago", fetched_at=fresh_time)
+        fresh_job = self._fresh("linkedin_saudi_v2")
+        fresh_job.published_at_raw = fresh_evidence.raw
+        fresh_job.published_at_earliest = fresh_evidence.earliest
+        fresh_job.published_at_latest = fresh_evidence.latest
+        fresh_job.published_at_est = fresh_evidence.estimate
+        fresh_job.published_precision = fresh_evidence.precision
+        fresh_job.time_semantics = fresh_evidence.semantics
+
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "jobs.db")
+            stamp = (self.now - timedelta(minutes=15)).isoformat().replace("+00:00", "Z")
+            with connect(db_path) as conn:
+                for source in ("linkedin", "linkedin_saudi_v2"):
+                    update_source_run(conn, source, "ok", last_run_at=stamp)
+                    mark_source_baselined(conn, source, baselined_at=stamp)
+
+            first = main.run_bot(
+                db_path=db_path,
+                fetchers=[("LinkedIn", lambda: [stale_job])],
+                router=lambda job_obj: ["microsoft_cloud"],
+                cleanup_func=lambda: None,
+                reference_time=self.now,
+            )
+            self.assertEqual(first.expired_new_jobs, 1)
+
+            sent = []
+            with self.assertLogs(main.log, level="INFO") as captured:
+                second = main.run_bot(
+                    db_path=db_path,
+                    fetchers=[("LinkedIn Saudi V2", lambda: [fresh_job])],
+                    sender=lambda job_obj, topics: sent.append(job_obj.source)
+                    or {topic: True for topic in topics},
+                    router=lambda job_obj: ["microsoft_cloud"],
+                    cleanup_func=lambda: None,
+                    reference_time=fresh_time,
+                )
+            self.assertEqual(second.refreshed_jobs, 1)
+            self.assertEqual(second.fresh_new_jobs, 1)
+            self.assertEqual(second.topic_send_successes, 1)
+            self.assertEqual(sent, ["linkedin_saudi_v2"])
+            self.assertTrue(any("outcome=promoted_from_expired" in line for line in captured.output))
+            with connect(db_path) as conn:
+                row = conn.execute(
+                    "SELECT source, send_status, freshness_status, freshness_reason FROM jobs"
+                ).fetchone()
+                self.assertEqual(row["source"], "linkedin_saudi_v2")
+                self.assertEqual(row["send_status"], "sent")
+                self.assertEqual(row["freshness_status"], "FRESH")
+                self.assertEqual(row["freshness_reason"], "publication_time_fresh")
+
+            duplicate_sent = []
+            duplicate = main.run_bot(
+                db_path=db_path,
+                fetchers=[("LinkedIn", lambda: [self._fresh("linkedin")])],
+                sender=lambda job_obj, topics: duplicate_sent.append(job_obj.title)
+                or {topic: True for topic in topics},
+                router=lambda job_obj: ["microsoft_cloud"],
+                cleanup_func=lambda: None,
+                reference_time=fresh_time + timedelta(minutes=5),
+            )
+            self.assertEqual(duplicate.fresh_new_jobs, 0)
+            self.assertEqual(duplicate.topic_send_successes, 0)
+            self.assertEqual(duplicate_sent, [])
+
+
+class ATSSnapshotSendFlowTests(unittest.TestCase):
+    def setUp(self):
+        self.enterContext(patch.object(main, "FRESH_ONLY", True))
+
+    def test_ats_source_baselines_then_sends_fresh_new_tech_job(self):
+        now = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
         baseline_job = Job(
             title="Backend Engineer",
             company="HALA",
@@ -1285,16 +1399,16 @@ class ATSSnapshotShadowFlowTests(unittest.TestCase):
                 reference_time=now + timedelta(minutes=30),
             )
             self.assertEqual(second.fresh_new_jobs, 1)
-            self.assertEqual(second.shadow_eligible_jobs, 1)
-            self.assertEqual(second.topic_send_successes, 0)
-            self.assertEqual(sent, [])
+            self.assertEqual(second.shadow_eligible_jobs, 0)
+            self.assertEqual(second.topic_send_successes, 1)
+            self.assertEqual(sent, ["Site Reliability Engineer"])
 
             with connect(db_path) as conn:
                 row = conn.execute(
                     "SELECT send_status, freshness_reason FROM jobs WHERE url = ?",
                     (fresh_job.url,),
                 ).fetchone()
-                self.assertEqual(row["send_status"], "shadow")
+                self.assertEqual(row["send_status"], "sent")
                 self.assertEqual(row["freshness_reason"], "recent_observation_after_success")
 
 

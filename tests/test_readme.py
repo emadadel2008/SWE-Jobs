@@ -23,7 +23,7 @@ class ReadmeDocumentationTests(unittest.TestCase):
         self.assertIn("discover_ats_candidates", self.text)
         self.assertIn("companies/saudi_ats.json", self.text)
         self.assertIn("Jobzaty", self.text)
-        self.assertIn("discovery-only", self.text.lower())
+        self.assertIn("every registered source is send-capable", self.text.lower())
 
     def test_readme_documents_single_primary_topic_design(self):
         self.assertIn("one primary topic", self.text.lower())

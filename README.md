@@ -1,17 +1,16 @@
 # Programming Jobs Telegram Bot
 
-Quality-first Telegram bot for **fresh Microsoft Cloud jobs from any employer**, with LinkedIn as the current production feed. Relevant jobs go to one Microsoft Cloud forum topic (thread ID **279**), not per-role topics.
+Telegram bot for **matching Microsoft Cloud jobs from any employer**, with LinkedIn as a core feed. Relevant jobs go to one Microsoft Cloud forum topic (thread ID **279**), not per-role topics.
 
-The product goal is a real-time job feed, not a historical job archive:
+The product goal is relevant job discovery with duplicate-safe delivery:
 
-> discover jobs that are new to us, prove they are still fresh enough, and notify users once.
+> discover matching jobs and notify users once, regardless of posting age.
 
 ## Current Design
 
-- **Sources:** production LinkedIn and Saudi LinkedIn V2, a low-rate shadow Jobzaty discovery feed, and an evidence-driven shadow ATS company registry (Greenhouse, Lever, Ashby, Workday). WUZZUF is temporarily paused after repeated production 403 responses.
-- **Fresh-only gate:** old or uncertain jobs are stored for dedup/audit but are not posted late.
-- **Source baselines:** the first successful fetch of a new source never sends its existing backlog.
-- **Shadow-by-default sources:** any source not explicitly promoted to production is measured and stored but cannot send to Telegram. Shadow discovery cannot suppress a later fresh production discovery of the same job.
+- **Sources:** LinkedIn, Saudi LinkedIn V2, Jobzaty, and the registered Saudi ATS company feeds (Greenhouse, Lever, Ashby, Workday) can all send qualifying jobs. WUZZUF is temporarily paused after repeated production 403 responses.
+- **No age limit:** `FRESH_ONLY=false` by default. Old or missing publication dates do not block matching jobs.
+- **Stored matches:** previously expired, skipped, and shadow jobs are reconsidered if never delivered. Successful, ambiguous, and terminal failed deliveries remain protected.
 - **Per-source run history:** fetch counts, freshness outcomes, failures, duration, shadow yield, coverage gaps, and health status are stored for later source scoring.
 - **Optional private admin monitoring:** health transitions and a compact 24-hour digest can be sent to a separate admin chat without adding public topics or messages.
 - **Per-source scheduling:** GitHub is requested to run every two hours; individual sources persist `next_poll_at` and are fetched when due. Actual GitHub scheduled starts can be delayed.
@@ -31,9 +30,9 @@ The current live deployment intentionally stays on **GitHub Actions + the `data`
 - Workflow schedule requested from GitHub: `0 */2 * * *` (every two hours).
 - GitHub scheduled execution is **best-effort**, so an actual run can start later than the requested cadence.
 - `VPS_PRODUCTION` should remain unset/`false` while GitHub owns production. The VPS files added in Update 19 are standby deployment tooling only.
-- LinkedIn is the active send-capable production fetcher. WUZZUF is paused at runtime after repeated `403` responses.
-- Jobzaty Discovery and all company ATS feeds remain shadow/discovery sources and cannot independently send Telegram jobs.
-- The current deployment does **not** enable automatic gap catch-up/backfill. A long GitHub scheduling gap can still mean jobs were missed during the outage, but LinkedIn's next bounded `r7200` result set remains eligible on its own instead of being rejected merely because the previous poll was late.
+- LinkedIn, Saudi LinkedIn V2, Jobzaty, and all registered company ATS feeds are send-capable. WUZZUF is paused at runtime after repeated `403` responses.
+- Matching jobs can be sent regardless of publication age, including first-run results and previously suppressed stored matches, but never successful or ambiguous deliveries.
+- LinkedIn no longer sends `f_TPR` or applies a local age filter; pagination and request-rate limits still bound fetching.
 - Topic renames inside Telegram are safe: renaming an existing forum topic does not change its `message_thread_id`, so the stored GitHub topic secret does not need to change unless the topic itself is deleted/recreated.
 
 The ten former role topics are retired from routing. Only `TOPIC_MICROSOFT_CLOUD` is read for public job delivery; the configured Actions secret is `279`.
@@ -47,39 +46,39 @@ Enabled sources are assembled in `sources/__init__.py` as `ALL_FETCHERS`. Core f
 | WUZZUF | Paused | Repeated 403 responses from GitHub-hosted runners; parser retained for future re-evaluation |
 | LinkedIn | Production | 21 bounded Microsoft Cloud product searches across Egypt, Saudi Arabia, and global remote; no employer restriction |
 | LinkedIn Saudi V2 | Production | Saudi `geoId=100459316`, broad country search + ERP/business-systems gap fillers |
-| Jobzaty Discovery | Shadow · discovery-only | Public Saudi programming/cybersecurity/IT category cards · 60 min poll · never sends |
-| HALA | Shadow ATS | Greenhouse public job board · 30 min poll |
-| MinIO | Shadow ATS | Greenhouse public job board, Saudi rows only · 60 min poll |
-| SOUM | Shadow ATS | Lever public postings API · 30 min poll |
-| Sarj.ai | Shadow ATS | Ashby public job posting API · 60 min poll |
-| Echelon | Shadow ATS | Ashby public job posting API · 60 min poll |
-| Scale AI | Shadow ATS | Greenhouse; active Saudi engineering hiring · 30 min poll |
-| Incorta | Shadow ATS | Lever; Riyadh data/BI roles · 60 min poll |
-| UiPath | Shadow ATS | Ashby; Riyadh automation/solution engineering · 60 min poll |
-| ElevenLabs | Shadow ATS | Ashby; Saudi AI/engineering/GTM roles · 60 min poll |
-| Cognition | Shadow ATS | Ashby; Riyadh/MENA applied-AI roles · 60 min poll |
-| Lean Technologies | Shadow ATS | Ashby; Riyadh fintech/platform roles · 30 min poll |
-| Cisco | Shadow ATS | Workday CXS; Saudi technology/customer-delivery roles · 60 min poll |
-| NTT DATA | Shadow ATS | Workday CXS; Riyadh platform/network/technology roles · 60 min poll |
-| Infobip | Shadow ATS | Workday CXS; Riyadh solution engineering/cloud communications · 60 min poll |
-| HPE | Shadow ATS | Workday CXS; Riyadh data/cloud/COOP roles · 60 min poll |
-| Workday | Shadow ATS | Workday CXS; Riyadh Workday/solution roles · 60 min poll |
-| Salesforce | Shadow ATS | Workday CXS; Saudi cloud/solution roles · 60 min poll |
+| Jobzaty | Send-capable | Public Saudi programming/cybersecurity/IT category cards · 60 min poll |
+| HALA | Send-capable ATS | Greenhouse public job board · 30 min poll |
+| MinIO | Send-capable ATS | Greenhouse public job board, Saudi rows only · 60 min poll |
+| SOUM | Send-capable ATS | Lever public postings API · 30 min poll |
+| Sarj.ai | Send-capable ATS | Ashby public job posting API · 60 min poll |
+| Echelon | Send-capable ATS | Ashby public job posting API · 60 min poll |
+| Scale AI | Send-capable ATS | Greenhouse; active Saudi engineering hiring · 30 min poll |
+| Incorta | Send-capable ATS | Lever; Riyadh data/BI roles · 60 min poll |
+| UiPath | Send-capable ATS | Ashby; Riyadh automation/solution engineering · 60 min poll |
+| ElevenLabs | Send-capable ATS | Ashby; Saudi AI/engineering/GTM roles · 60 min poll |
+| Cognition | Send-capable ATS | Ashby; Riyadh/MENA applied-AI roles · 60 min poll |
+| Lean Technologies | Send-capable ATS | Ashby; Riyadh fintech/platform roles · 30 min poll |
+| Cisco | Send-capable ATS | Workday CXS; Saudi technology/customer-delivery roles · 60 min poll |
+| NTT DATA | Send-capable ATS | Workday CXS; Riyadh platform/network/technology roles · 60 min poll |
+| Infobip | Send-capable ATS | Workday CXS; Riyadh solution engineering/cloud communications · 60 min poll |
+| HPE | Send-capable ATS | Workday CXS; Riyadh data/cloud/COOP roles · 60 min poll |
+| Workday | Send-capable ATS | Workday CXS; Riyadh Workday/solution roles · 60 min poll |
+| Salesforce | Send-capable ATS | Workday CXS; Saudi cloud/solution roles · 60 min poll |
 | Legacy aggregators | Disabled | Not registered at runtime |
 
-All ATS feeds are shadow by default because their generated source keys are not in `PRODUCTION_SOURCE_KEYS`. Their first successful fetch establishes a no-send baseline, then later newly observed jobs can be measured without Telegram delivery.
+All registered ATS feeds can send matching jobs, including their first successful fetch.
 
 ### Saudi job-board discovery
 
-`Jobzaty Discovery` is intentionally **not** a production job source. It reads only three narrow public Saudi category pages (`programming-web-development`, `cybersecurity-jobs`, and `information-technology`) once per hour, deduplicates by Jobzaty listing ID, and records the cards for coverage/source-overlap measurement. The category label is retained as a classifier tag.
+`Jobzaty` reads three narrow public Saudi category pages (`programming-web-development`, `cybersecurity-jobs`, and `information-technology`) once per hour, deduplicates by Jobzaty listing ID, and can send listings that pass the relevance checks. The category label is retained as a classifier tag.
 
-Jobzaty cards do not prove minute-level publication time and some listings are multi-role announcements rather than one requisition. The source key therefore also lives in `DISCOVERY_ONLY_SOURCE_KEYS`: even an apparently fresh timestamp in a future parser cannot create a Telegram delivery until that guard is deliberately removed. This lets us measure Saudi coverage without weakening the bot's **freshness > quantity** rule.
+Jobzaty cards may not provide a precise publication timestamp and some listings are multi-role announcements rather than one requisition. Missing publication dates do not block sending under the default no-age-limit policy.
 
-This integration does not log in, submit forms, bypass access controls, or crawl the archive. It is deliberately low-rate and shadow-only.
+This integration does not log in, submit forms, bypass access controls, or crawl the archive. It is deliberately low-rate.
 
 ### Saudi ATS company registry
 
-The registry grows in measured batches rather than hundreds of employers at once. The current shadow set is:
+The registry grows in measured batches rather than hundreds of employers at once. Every registered company feed is send-capable:
 
 ```text
 companies/saudi_ats.json
@@ -108,7 +107,7 @@ The adapters live in `sources/ats.py` and use public career-site read endpoints 
 
 ### ATS discovery helper
 
-`ats_detector.py` recognizes Greenhouse, Lever, Ashby, and Workday job/board URLs and extracts the tenant/board identifiers without making a network request. `discover_ats_candidates()` deduplicates a batch of observed URLs into review candidates, but discovery is deliberately side-effect free: it never edits `companies/saudi_ats.json` and can never activate a source automatically. This is the foundation for bootstrapping future registry candidates from off-site apply URLs observed in trusted feeds. Unknown/custom career sites return no guess and remain manual-review candidates.
+`ats_detector.py` recognizes Greenhouse, Lever, Ashby, and Workday job/board URLs and extracts the tenant/board identifiers without making a network request. `discover_ats_candidates()` deduplicates observed URLs into candidate records, but never edits `companies/saudi_ats.json` or activates a source automatically. Unknown/custom career sites return no guess and are not added to the registry automatically.
 
 ### Source scheduling and health
 
@@ -117,6 +116,8 @@ GitHub Actions is configured for a two-hour schedule, but scheduled workflow exe
 A successful source schedules its next normal poll at its configured interval. A failed source retries on the next workflow run even when its normal cadence is slower. Sources that are not due are skipped without blocking the Telegram delivery queue.
 
 Telegram job posts and admin notifications are paused daily from 22:00 to 09:00 in the `Africa/Cairo` timezone. Jobs discovered during that window remain queued for delivery after 09:00. Manual Actions runs can use `test_mode=true` to force a fresh fetch without Telegram delivery or database restore/persistence.
+
+For an explicitly authorized live check, a manual run can set `allow_quiet_hours_send=true` and `delivery_limit=1`. The quiet-hours exception applies only to that dispatch; scheduled runs retain quiet hours and the normal 100-job cap.
 
 Health intentionally distinguishes a quiet ATS tenant from a broken integration:
 
@@ -132,13 +133,13 @@ If two or more tenants on the same ATS adapter all fail in the same bot run, an 
 
 The V2 strategy uses Saudi Arabia's LinkedIn `geoId` and a broad country-level search, then lets the local classifier decide which cards are tech. A small ERP/business-systems gap-filler layer covers SAP/ERP, Oracle/Odoo, and Dynamics/Salesforce. It intentionally does **not** hard-code undocumented LinkedIn job-function IDs yet; those can be A/B tested later in shadow if the broad strategy is too noisy or request-heavy.
 
-Fresh, relevant jobs discovered by V2 can now be sent through the same Microsoft Cloud, geography, and freshness gates as the primary LinkedIn feed. Previously stored shadow discoveries remain suppressed and are not backfilled.
+Relevant jobs discovered by V2 use the same Microsoft Cloud and geography gates as the primary LinkedIn feed. Previously stored shadow discoveries can be sent if never delivered.
 
 ## Classifier and Saudi Location Normalization
 
 `classifier.py` retains deterministic broad English/Arabic tech classification for discovery compatibility. Telegram relevance is separate: `is_microsoft_cloud_job()` requires word-bounded product evidence in the title, tags (including nested tags), or available description. `is_target_microsoft_cloud_role()` applies the updated job-family filter, including cloud engineering/architecture, Microsoft 365, cloud security/SOC/SIEM, presales/consulting/training, Azure DevOps/SRE, Power Platform, Dynamics 365/Copilot, SAP/ERP, IT support, and system/security administration. The product evidence includes Azure DevOps/Arc/OpenAI, Microsoft Copilot/Security, and related Microsoft Cloud services.
 
-Employer is not evidence: a Microsoft job without a cloud product signal is excluded, while an Azure role at any other company is included. Generic cloud, AWS/GCP-only, standalone .NET, Windows Server, and generic Active Directory roles are excluded unless the job also has explicit Microsoft Cloud evidence. Onsite roles are accepted in Egypt, Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, Oman, Jordan, and Morocco; remote jobs remain eligible worldwide. Descriptions are inspected only when already supplied by the source; no new detail-page crawling is added. Source baselines, shadow/discovery-only rules, and duplicate protection remain unchanged.
+Employer is not evidence: a Microsoft job without a cloud product signal is excluded, while an Azure role at any other company is included. Generic cloud, AWS/GCP-only, standalone .NET, Windows Server, and generic Active Directory roles are excluded unless the job also has explicit Microsoft Cloud evidence. Onsite roles are accepted in Egypt, Saudi Arabia, UAE, Qatar, Kuwait, Bahrain, Oman, Jordan, and Morocco; remote jobs remain eligible worldwide. Descriptions are inspected only when already supplied by the source; no new detail-page crawling is added. Duplicate protection remains in force; baselines and freshness gates apply only with `FRESH_ONLY=true`.
 
 `locations.py` normalizes common Saudi Arabic/English city variants (for example Riyadh/الرياض, Jeddah/Jiddah/جدة, Khobar/الخبر, Dammam/الدمام, NEOM/نيوم). Location remains metadata, not a routing dimension. Messages can include city hashtags such as `#Riyadh` without creating extra Telegram topics.
 
@@ -158,10 +159,10 @@ The matched evidence sentence and source key are stored in SQLite for audit, whi
 
 ## Shadow Mode and Source Metrics
 
-New sources are **shadowed by default**. The production allowlist currently contains only:
+Every registered source is send-capable; unregistered or unknown sources remain shadowed. The current production allowlist is:
 
 ```python
-PRODUCTION_SOURCE_KEYS = {"linkedin", "linkedin_saudi_v2", "wuzzuf"}  # WUZZUF fetcher is currently paused in the runtime registry
+PRODUCTION_SOURCE_KEYS = {"linkedin", "linkedin_saudi_v2", "wuzzuf", "jobzaty", "ats_*"}
 ```
 
 A source that is not in this set still runs the complete discovery pipeline:
@@ -175,7 +176,7 @@ fetch
 → NO Telegram delivery
 ```
 
-Fresh jobs discovered by a shadow source are stored with `send_status = shadow`. When that same source is later promoted, historical shadow rows remain suppressed; only jobs discovered **after** promotion can create Telegram deliveries. If a **different production source** independently discovers the same still-fresh job, the row is promoted into the delivery queue so shadow mode cannot hide a legitimate production discovery.
+Registered feeds are enabled for delivery. Unknown sources stay shadowed as a safety default. Stored matches from enabled sources are reconsidered, but already delivered jobs are never resent.
 
 Each source run appends one row to `source_run_history` with fields such as:
 
@@ -284,14 +285,14 @@ The bot sends using Telegram's `message_thread_id`.
 
 The bot does **not** use `published_at > last_run` as its notification rule because search indexing can be delayed.
 
-Instead:
+With the default `FRESH_ONLY=false`:
 
 ```text
-new to us
+matches the relevance and geography filters
 +
-source already baselined
+enabled source
 +
-fresh enough for that source
+no successful or ambiguous delivery
 =
 send eligible
 ```
@@ -315,23 +316,23 @@ Examples:
 - `1 hour ago` → wider uncertain interval;
 - missing/coarse time → source-specific fallback only when safe.
 
-A source's first successful fetch is a **baseline** and never floods Telegram with its existing inventory.
+Publication age is metadata, not a delivery gate. First-run inventory and previously suppressed matching jobs are eligible. `MAX_JOBS_PER_RUN=100`, Telegram throttling, and Cairo quiet hours remain in effect.
 
 ### Current freshness configuration
 
 ```text
+FRESH_ONLY=false
 LINKEDIN_FRESHNESS_SECONDS=7200
-LINKEDIN_SEARCH_WINDOW_SECONDS=1209600
 WUZZUF_OBSERVATION_MAX_AGE_MINUTES=60
 ATS_OBSERVATION_MAX_AGE_MINUTES=120
 PENDING_SEND_MAX_AGE_MINUTES=60
 ```
 
-LinkedIn searches the newest-first two-week window (`f_TPR=r1209600`) so relevant older listings can be reviewed. This is a discovery window only: only jobs with publication evidence proving they are at most two hours old can enter the automatic Telegram queue. Older jobs and listings without reliable publication-time evidence are stored as expired and logged as review candidates; they are never auto-sent. Observation-only fallbacks (for snapshot-style sources such as WUZZUF/ATS) still fail closed after a long coverage gap. WUZZUF's fallback configuration remains in code even though the fetcher is currently paused.
+LinkedIn searches newest-first without `f_TPR` and without a local age cutoff. Missing publication dates and source coverage gaps do not block delivery. `age_limit_disabled` records the policy decision explicitly; legacy `fresh_count` metrics count eligible discoveries and are not proof of recent publication in this mode.
 
-If an unsent production job was previously expired only because evidence was uncertain (`coverage_gap_too_large` or `insufficient_time_evidence`) and the same source later supplies trustworthy fresh publication evidence, the job may be recovered into the delivery queue. Jobs proven `TOO_OLD`, jobs expired by the send deadline, and any sent/retry/partial delivery state are never revived by this rule.
+Set `FRESH_ONLY=true` only to deliberately restore the old age-based policy. The unchanged 7200-second configuration then governs LinkedIn, baselines suppress first-run inventory, and queue deadlines apply again.
 
-**Important current limitation:** there is no automatic Telegram backfill mode. If GitHub delays a scheduled run for several hours, the next run can find relevant jobs from the past two weeks for review, but it will not replay them to Telegram unless their publication evidence still proves they are within the two-hour send window.
+Reconsideration preserves all delivery attempts. Sent, ambiguous (`unknown`/`sending`), configuration-error, and permanent-failure records are not reset to force a post.
 
 ## Telegram Delivery State
 
@@ -358,7 +359,7 @@ Important behavior:
 - ambiguous read timeouts become `UNKNOWN` instead of being blindly retried;
 - formatting errors get one safe plain-text fallback;
 - missing/broken topic configuration is treated as `CONFIG_ERROR`;
-- deliveries expire after the live-send deadline so stale jobs do not appear later.
+- delivery age deadlines are disabled with `FRESH_ONLY=false`; retry backoff and ambiguous-timeout safeguards remain enabled.
 
 Each attempt is recorded in `delivery_attempts` with useful debugging fields such as HTTP status, Telegram error code, description, retry delay, and message ID when available.
 
@@ -371,14 +372,14 @@ Each attempt is recorded in `delivery_attempts` with useful debugging fields suc
 - freshness evidence and decision reason;
 - internal description text when a public source provides it, plus eligibility classification/evidence;
 - first/last seen times;
-- source baseline, shadow/production state, and latest health counters;
+- source baseline, send/shadow state, and latest health counters;
 - append-only per-source run history and metrics;
 - job send status;
 - durable topic delivery rows;
 - append-only delivery attempt audit rows;
 - runtime metadata.
 
-Legacy pending/retry work that is too old is expired instead of replayed.
+Legacy pending/retry work is no longer expired solely because of its age.
 
 ### SQLite retention and Git data branch
 
@@ -395,17 +396,15 @@ GitHub Actions (requested every 15 min; actual start time is best-effort)
     ↓
 restore jobs.db from data branch
     ↓
-fetch LinkedIn + shadow Saudi ATS/discovery feeds
+fetch every registered source that is due
     ↓
 quality + geography filtering
     ↓
 Saudi eligibility enrichment from explicit evidence
     ↓
-freshness gate
-    ├─ baseline → store, no send
-    ├─ fresh + production source → queue
-    ├─ fresh + shadow source → store as shadow, no send
-    └─ stale/unsafe → expire
+delivery eligibility
+    ├─ matching + enabled + not delivered → queue
+    └─ already delivered / ambiguous / filtered → no new send
     ↓
 SQLite upsert
     ↓
@@ -464,7 +463,7 @@ Automatic clustering intentionally prefers false splits over false merges. A fuz
 
 Short generic titles such as `QA Engineer` are not fuzzy-merged automatically. Reposts/new requisitions from the same source are also kept separate unless source identity or the canonical URL proves they are the same posting.
 
-When an official ATS posting and a LinkedIn posting cluster together, the delivery/discovery source remains unchanged, but `preferred_url`, `preferred_source`, and `preferred_source_key` can upgrade to the higher-trust ATS link. Trust is centralized in `source_trust.py`: employer ATS feeds outrank LinkedIn, LinkedIn outranks WUZZUF, and discovery-only sources rank below send-capable boards. A lower-trust observation can never downgrade an official apply link. Telegram keeps both facts visible: for example, a role discovered on LinkedIn can show `Apply on official careers` with `Discovered via: LinkedIn · Apply: HALA Careers (official)`. This preserves honest discovery analytics while preferring the safest canonical application link.
+When an official ATS posting and a LinkedIn posting cluster together, the delivery/discovery source remains unchanged, but `preferred_url`, `preferred_source`, and `preferred_source_key` can upgrade to the higher-trust ATS link. Trust is centralized in `source_trust.py`: employer ATS feeds outrank LinkedIn, LinkedIn outranks WUZZUF, and discovery sources rank below send-capable boards. A lower-trust observation can never downgrade an official apply link. Telegram keeps both facts visible: for example, a role discovered on LinkedIn can show `Apply on official careers` with `Discovered via: LinkedIn · Apply: HALA Careers (official)`. This preserves honest discovery analytics while preferring the safest canonical application link.
 
 The v8 migration backfills exactly one `job_postings` row for every existing job without guessing historical merges; clustering only starts for observations after deployment.
 
@@ -484,7 +483,7 @@ Requested schedule:
 
 This requests a run every two hours. **GitHub Actions is the current production runtime.** The workflow has a `concurrency` group with `cancel-in-progress: false`, restores SQLite from the `data` branch, runs `main.py`, and writes the updated database back.
 
-GitHub's scheduled-event timing is best-effort. The two-hour cadence does not widen source freshness windows or add backfill; jobs can be missed between polls. Manual `workflow_dispatch` runs are useful for verification and, while `VPS_PRODUCTION` is unset/false, can perform normal production sends when `seed_mode=false`.
+GitHub's scheduled-event timing is best-effort. The two-hour cadence is a polling schedule, not an age limit. Manual `workflow_dispatch` runs are useful for verification and, while `VPS_PRODUCTION` is unset/false, can perform normal production sends when `seed_mode=false`.
 
 Do **not** set `VPS_PRODUCTION=true` in the current deployment. That variable is reserved for an intentional future VPS cutover. Once set, scheduled Actions jobs skip production and manual Actions runs are forced into seed mode so two independent SQLite copies cannot both send Telegram jobs.
 
@@ -532,7 +531,7 @@ The deployment templates intentionally do not contain real secrets. Until that e
 
 Manual GitHub runs support `seed_mode=true`.
 
-Seed mode stores/baselines jobs without sending them. New source integrations should normally remain in shadow mode across multiple runs before promotion; seed mode is still useful for manual one-time baselining.
+Seed mode stores/baselines jobs without sending them. New integrations should be added to the source registry and production allowlist deliberately; seed mode is useful for a one-time no-send baseline.
 
 ## Local Testing
 
@@ -643,6 +642,6 @@ python main.py
 - Retired Telegram topics can be closed instead of deleted so their historical posts remain accessible.
 - Do not publish full job descriptions in the group; cards intentionally stay compact.
 - WUZZUF is paused at runtime after repeated 403 responses; keep its parser/tests until a safe re-evaluation is useful.
-- LinkedIn and Saudi LinkedIn V2 are send-capable production fetchers. Saudi ATS/company feeds remain the diversification/measurement layer in shadow mode.
-- New Saudi sources should be added to the registry/fetch layer first, observed in shadow mode, and promoted only after their freshness/relevance/reliability/lead-time metrics look healthy. Discovery-only feeds must additionally prove safe publication-time semantics before they can ever be promoted.
+- LinkedIn, Saudi LinkedIn V2, Jobzaty, and registered Saudi ATS/company feeds are send-capable, subject to relevance and duplicate-safe delivery, with no publication-age limit by default.
+- Add new Saudi sources to the registry and production allowlist only after checking their freshness/relevance behavior; unknown sources remain shadowed.
 - Keep the ATS registry small and evidence-driven. Add employers because current data shows useful Saudi tech hiring, not simply to maximize company count.

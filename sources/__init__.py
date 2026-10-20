@@ -1,7 +1,7 @@
-"""Source registry for production and shadow job feeds.
+"""Source registry for enabled job feeds.
 
-LinkedIn and Saudi LinkedIn V2 are production sources. WUZZUF is registered but
-paused, while every ATS company feed is shadow by default.
+All registered feeds may send jobs that pass relevance, freshness, and
+deduplication checks. WUZZUF remains paused after repeated 403 responses.
 """
 
 try:  # final project layout: sources/__init__.py
@@ -22,9 +22,9 @@ CORE_FETCHERS = [
     ("LinkedIn Saudi V2", fetch_linkedin_saudi_v2),
 ]
 
-SHADOW_BOARD_FETCHERS = [("Jobzaty", fetch_jobzaty)]
+BOARD_FETCHERS = [("Jobzaty", fetch_jobzaty)]
 ATS_FETCHERS = build_ats_fetchers()
-ALL_FETCHERS = CORE_FETCHERS + SHADOW_BOARD_FETCHERS + ATS_FETCHERS
+ALL_FETCHERS = CORE_FETCHERS + BOARD_FETCHERS + ATS_FETCHERS
 
 SOURCE_POLL_INTERVAL_MINUTES = {
     "linkedin": 15,

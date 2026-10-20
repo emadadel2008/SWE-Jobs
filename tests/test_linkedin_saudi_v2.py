@@ -29,10 +29,10 @@ class LinkedInSaudiV2Tests(unittest.TestCase):
         for search in linkedin_saudi_v2.SAUDI_V2_SEARCHES:
             self.assertEqual(search.get("geoId"), linkedin_saudi_v2.SAUDI_GEO_ID)
             self.assertEqual(search.get("location"), "Saudi Arabia")
-            self.assertIn("f_TPR", search)
+            self.assertNotIn("f_TPR", search)
             self.assertEqual(search.get("sortBy"), "DD")
 
-    def test_wrapper_labels_jobs_as_shadow_source(self):
+    def test_wrapper_labels_jobs_with_source_identity(self):
         requested = []
 
         def getter(url, params=None, headers=None):
@@ -50,6 +50,12 @@ class LinkedInSaudiV2Tests(unittest.TestCase):
         self.assertEqual(jobs[0].original_source, "LinkedIn")
         self.assertEqual(jobs[0].source_job_id, "8888888888")
         self.assertEqual(requested[0]["geoId"], "100459316")
+        from config import SOURCE_FRESHNESS_POLICIES
+
+        self.assertEqual(
+            SOURCE_FRESHNESS_POLICIES["linkedin_saudi_v2"]["uncertain_fallback"],
+            "SOURCE_WINDOW",
+        )
 
 
 if __name__ == "__main__":

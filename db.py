@@ -742,10 +742,7 @@ def expire_legacy_backlog_once(
         UPDATE jobs
         SET send_status = 'expired'
         WHERE send_status IN ('pending', 'retry', 'partial')
-          AND CASE
-                WHEN freshness_reason = 'manual_review_approved' THEN last_seen_at
-                ELSE first_seen_at
-              END < ?
+          AND first_seen_at < ?
         """,
         (cutoff_iso,),
     )
@@ -1202,28 +1199,8 @@ def upsert_jobs(conn: sqlite3.Connection, jobs: list[Job]) -> tuple[int, int]:
     return inserted, refreshed
 
 
-def get_jobs_for_sending(
-    conn: sqlite3.Connection,
-    limit: int = 100,
-    job_ids: set[int] | None = None,
-) -> list[StoredJob]:
+def get_jobs_for_sending(conn: sqlite3.Connection, limit: int = 100) -> list[StoredJob]:
     """Return jobs that are still pending or need retry."""
-    if job_ids is not None:
-        if not job_ids:
-            return []
-        placeholders = ",".join("?" for _ in job_ids)
-        rows = conn.execute(
-            f"""
-            SELECT * FROM jobs
-            WHERE send_status IN ('pending', 'retry', 'partial')
-              AND id IN ({placeholders})
-            ORDER BY first_seen_at DESC, id DESC
-            LIMIT ?
-            """,
-            (*job_ids, limit),
-        ).fetchall()
-        return [_row_to_stored_job(row) for row in rows]
-
     rows = conn.execute(
         """
         SELECT * FROM jobs
@@ -1232,6 +1209,23 @@ def get_jobs_for_sending(
         LIMIT ?
         """,
         (limit,),
+    ).fetchall()
+    return [_row_to_stored_job(row) for row in rows]
+
+
+def get_unsent_age_rejected_jobs(conn: sqlite3.Connection) -> list[StoredJob]:
+    """Return suppressed clusters without successful or ambiguous deliveries."""
+    rows = conn.execute(
+        """
+        SELECT jobs.* FROM jobs
+        WHERE send_status IN ('expired', 'shadow', 'skipped')
+          AND NOT EXISTS (
+              SELECT 1 FROM job_sends
+              WHERE job_sends.job_id = jobs.id
+                AND status NOT IN ('queued', 'retry_wait', 'expired')
+          )
+        ORDER BY first_seen_at DESC, id DESC
+        """
     ).fetchall()
     return [_row_to_stored_job(row) for row in rows]
 
@@ -1491,7 +1485,7 @@ def get_job_freshness_state(conn: sqlite3.Connection, job_id: int) -> tuple[str,
 def set_job_primary_source(
     conn: sqlite3.Connection, job_id: int, source: str, source_job_id: str = ""
 ) -> None:
-    """Promote the source that is allowed to deliver a previously-shadow job."""
+    """Promote the source that will deliver a previously undelivered cluster."""
     conn.execute(
         "UPDATE jobs SET source = ?, source_job_id = ? WHERE id = ?",
         (source, source_job_id or "", job_id),
@@ -1546,10 +1540,7 @@ def expire_stale_unsent_jobs(
             freshness_status = 'TOO_OLD',
             freshness_reason = 'send_queue_deadline_exceeded'
         WHERE send_status IN ('pending', 'retry', 'partial')
-          AND CASE
-                WHEN freshness_reason = 'manual_review_approved' THEN last_seen_at
-                ELSE first_seen_at
-              END < ?
+          AND first_seen_at < ?
         """,
         (cutoff_iso,),
     )

@@ -127,13 +127,17 @@ class LinkedInFreshnessAndActiveTests(unittest.TestCase):
     def test_default_request_delay_is_ten_seconds(self):
         self.assertEqual(linkedin.DEFAULT_REQUEST_DELAY_SECONDS, 10)
 
-    def test_searches_cover_fourteen_days_but_delivery_gate_stays_two_hours(self):
-        self.assertEqual(linkedin.DEFAULT_SEARCH_WINDOW_SECONDS, 14 * 24 * 60 * 60)
-        self.assertEqual(linkedin.LINKEDIN_SEARCH_WINDOW_SECONDS, 14 * 24 * 60 * 60)
-        from config import LINKEDIN_FRESHNESS_SECONDS
+    def test_search_has_no_age_limit_by_default(self):
+        self.assertEqual(linkedin.DEFAULT_FRESHNESS_SECONDS, 2 * 60 * 60)
+        from config import LINKEDIN_FRESHNESS_SECONDS, SOURCE_FRESHNESS_POLICIES
+
         self.assertEqual(LINKEDIN_FRESHNESS_SECONDS, 7200)
+        self.assertEqual(
+            SOURCE_FRESHNESS_POLICIES["linkedin"]["uncertain_fallback"],
+            "SOURCE_WINDOW",
+        )
         for search in linkedin.LINKEDIN_SEARCHES:
-            self.assertEqual(search.get("f_TPR"), f"r{linkedin.DEFAULT_SEARCH_WINDOW_SECONDS}")
+            self.assertNotIn("f_TPR", search)
             self.assertEqual(search.get("sortBy"), "DD")
 
     def test_search_coverage_is_still_bounded_for_runtime(self):
@@ -174,30 +178,30 @@ class LinkedInFreshnessAndActiveTests(unittest.TestCase):
         jobs = linkedin.parse_linkedin_html(html, {"location": "Egypt"}, max_age_seconds=3600)
         self.assertEqual([job.title for job in jobs], ["Fresh Data Analyst"])
 
-    def test_default_parser_keeps_jobs_within_fourteen_day_review_window(self):
+    def test_default_parser_keeps_jobs_within_two_hour_window(self):
         html = """
         <li><a href="https://www.linkedin.com/jobs/view/recent-at-x-4444444445"></a>
         <h3 class="base-search-card__title">Recent Data Analyst</h3>
         <h4 class="base-search-card__subtitle">X</h4>
         <span class="job-search-card__location">Cairo</span>
-        <time>13 days ago</time></li>
+        <time>90 minutes ago</time></li>
         """
         jobs = linkedin.parse_linkedin_html(html, {"location": "Egypt"})
         self.assertEqual([job.title for job in jobs], ["Recent Data Analyst"])
 
-    def test_parser_discards_jobs_older_than_fourteen_days_when_review_window_is_set(self):
+    def test_parser_discards_jobs_older_than_two_hours(self):
         html = """
         <li><a href="https://www.linkedin.com/jobs/view/old-at-x-4444443281"></a>
         <h3 class="base-search-card__title">Old Data Analyst</h3>
         <h4 class="base-search-card__subtitle">X</h4>
         <span class="job-search-card__location">Cairo</span>
-        <time>16 days ago</time></li>
+        <time>3 hours ago</time></li>
         """
         self.assertEqual(
             linkedin.parse_linkedin_html(
                 html,
                 {"location": "Egypt"},
-                max_age_seconds=linkedin.DEFAULT_SEARCH_WINDOW_SECONDS,
+                max_age_seconds=linkedin.DEFAULT_FRESHNESS_SECONDS,
             ),
             [],
         )
@@ -215,7 +219,7 @@ class LinkedInFreshnessAndActiveTests(unittest.TestCase):
             request_delay=0,
             http_getter=fake_getter,
         )
-        self.assertEqual(requested[0]["f_TPR"], f"r{linkedin.DEFAULT_SEARCH_WINDOW_SECONDS}")
+        self.assertNotIn("f_TPR", requested[0])
         self.assertEqual(requested[0]["sortBy"], "DD")
         self.assertEqual(requested[0]["start"], "0")
 
