@@ -1,7 +1,7 @@
 """Source registry for production and shadow job feeds.
 
-Production sources remain WUZZUF and LinkedIn. Saudi LinkedIn V2 and every ATS
-company feed are shadow by default until measured data justifies promotion.
+LinkedIn and Saudi LinkedIn V2 are production sources. WUZZUF is registered but
+paused, while every ATS company feed is shadow by default.
 """
 
 try:  # final project layout: sources/__init__.py

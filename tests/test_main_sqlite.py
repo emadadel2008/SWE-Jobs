@@ -1123,6 +1123,7 @@ class ShadowPromotionTests(unittest.TestCase):
                 router=lambda job_obj: ["backend"],
                 cleanup_func=lambda: None,
                 reference_time=self.now,
+                production_source_keys={"linkedin", "wuzzuf"},
             )
             self.assertEqual(first.shadow_eligible_jobs, 1)
             with connect(db_path) as conn:
@@ -1139,6 +1140,7 @@ class ShadowPromotionTests(unittest.TestCase):
                 router=lambda job_obj: ["backend"],
                 cleanup_func=lambda: None,
                 reference_time=self.now + timedelta(minutes=10),
+                production_source_keys={"linkedin", "wuzzuf"},
             )
             self.assertEqual(second.inserted_jobs, 0)
             self.assertEqual(second.refreshed_jobs, 1)
@@ -1148,6 +1150,35 @@ class ShadowPromotionTests(unittest.TestCase):
             with connect(db_path) as conn:
                 row = conn.execute("SELECT source, send_status FROM jobs").fetchone()
                 self.assertEqual(row["source"], "linkedin")
+                self.assertEqual(row["send_status"], "sent")
+
+    def test_promoted_saudi_v2_sends_new_fresh_jobs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "jobs.db")
+            stamp = (self.now - timedelta(minutes=15)).isoformat().replace("+00:00", "Z")
+            with connect(db_path) as conn:
+                update_source_run(conn, "linkedin_saudi_v2", "ok", last_run_at=stamp)
+                mark_source_baselined(conn, "linkedin_saudi_v2", baselined_at=stamp)
+            sent = []
+            job = self._fresh("linkedin_saudi_v2")
+
+            summary = main.run_bot(
+                db_path=db_path,
+                fetchers=[("LinkedIn Saudi V2", lambda: [job])],
+                sender=lambda job_obj, topics: sent.append(job_obj.title)
+                or {topic: True for topic in topics},
+                router=lambda job_obj: ["microsoft_cloud"],
+                cleanup_func=lambda: None,
+                reference_time=self.now,
+            )
+
+            self.assertEqual(summary.fresh_new_jobs, 1)
+            self.assertEqual(summary.shadow_eligible_jobs, 0)
+            self.assertEqual(summary.topic_send_successes, 1)
+            self.assertEqual(sent, ["Backend Developer"])
+            with connect(db_path) as conn:
+                row = conn.execute("SELECT source, send_status FROM jobs").fetchone()
+                self.assertEqual(row["source"], "linkedin_saudi_v2")
                 self.assertEqual(row["send_status"], "sent")
 
 
