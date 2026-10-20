@@ -195,7 +195,7 @@ def evaluate_new_posting(
     is uncertain, selected sources may use one of two explicit fallbacks:
 
     - SOURCE_WINDOW means the adapter itself queried a bounded current window
-      (for example LinkedIn f_TPR=r3600). The current result set is freshness
+      (for example LinkedIn f_TPR=r7200). The current result set is freshness
       evidence on its own and does not depend on the previous poll being recent.
     - RECENT_OBSERVATION means freshness is inferred only from seeing a new item
       shortly after a prior successful snapshot. A long coverage gap disables

@@ -33,7 +33,7 @@ The current live deployment intentionally stays on **GitHub Actions + the `data`
 - `VPS_PRODUCTION` should remain unset/`false` while GitHub owns production. The VPS files added in Update 19 are standby deployment tooling only.
 - LinkedIn is the active send-capable production fetcher. WUZZUF is paused at runtime after repeated `403` responses.
 - Saudi LinkedIn V2, Jobzaty Discovery, and all company ATS feeds remain shadow/discovery sources and cannot independently send Telegram jobs.
-- The current deployment does **not** enable automatic gap catch-up/backfill. A long GitHub scheduling gap can still mean jobs were missed during the outage, but LinkedIn's next bounded `r3600` result set remains eligible on its own instead of being rejected merely because the previous poll was late.
+- The current deployment does **not** enable automatic gap catch-up/backfill. A long GitHub scheduling gap can still mean jobs were missed during the outage, but LinkedIn's next bounded `r7200` result set remains eligible on its own instead of being rejected merely because the previous poll was late.
 - Topic renames inside Telegram are safe: renaming an existing forum topic does not change its `message_thread_id`, so the stored GitHub topic secret does not need to change unless the topic itself is deleted/recreated.
 
 The ten former role topics are retired from routing. Only `TOPIC_MICROSOFT_CLOUD` is read for public job delivery; the configured Actions secret is `279`.
@@ -320,17 +320,17 @@ A source's first successful fetch is a **baseline** and never floods Telegram wi
 ### Current freshness configuration
 
 ```text
-LINKEDIN_FRESHNESS_SECONDS=3600
+LINKEDIN_FRESHNESS_SECONDS=7200
 WUZZUF_OBSERVATION_MAX_AGE_MINUTES=60
 ATS_OBSERVATION_MAX_AGE_MINUTES=120
 PENDING_SEND_MAX_AGE_MINUTES=60
 ```
 
-LinkedIn currently requests a rolling recent window with newest-first ordering. That upstream `f_TPR=r3600` window is treated as freshness evidence for the *current* result set, so a delayed previous GitHub run does not invalidate cards LinkedIn is returning now. Observation-only fallbacks (for snapshot-style sources such as WUZZUF/ATS) still fail closed after a long coverage gap. WUZZUF's fallback configuration remains in code even though the fetcher is currently paused.
+LinkedIn currently requests a rolling recent two-hour window with newest-first ordering, matching the requested two-hour GitHub Actions cadence. That upstream `f_TPR=r7200` window is treated as freshness evidence for the *current* result set, so a delayed previous GitHub run does not invalidate cards LinkedIn is returning now. Observation-only fallbacks (for snapshot-style sources such as WUZZUF/ATS) still fail closed after a long coverage gap. WUZZUF's fallback configuration remains in code even though the fetcher is currently paused.
 
 If an unsent production job was previously expired only because evidence was uncertain (`coverage_gap_too_large` or `insufficient_time_evidence`) and the same source later supplies trustworthy fresh publication evidence, the job may be recovered into the delivery queue. Jobs proven `TOO_OLD`, jobs expired by the send deadline, and any sent/retry/partial delivery state are never revived by this rule.
 
-**Important current limitation:** there is no automatic gap catch-up/backfill mode. If GitHub delays a scheduled run for several hours, the next run does not deliberately widen LinkedIn's search window to cover the entire outage. Jobs that were posted and disappeared outside the current one-hour LinkedIn window can therefore still be missed. Coverage gaps are logged and measured without replaying uncertain old results.
+**Important current limitation:** there is no automatic gap catch-up/backfill mode. If GitHub delays a scheduled run for several hours, the next run does not deliberately widen LinkedIn's search window to cover the entire outage. Jobs that were posted and disappeared outside the current two-hour LinkedIn window can therefore still be missed. Coverage gaps are logged and measured without replaying uncertain old results.
 
 ## Telegram Delivery State
 
