@@ -742,7 +742,10 @@ def expire_legacy_backlog_once(
         UPDATE jobs
         SET send_status = 'expired'
         WHERE send_status IN ('pending', 'retry', 'partial')
-          AND first_seen_at < ?
+          AND CASE
+                WHEN freshness_reason = 'manual_review_approved' THEN last_seen_at
+                ELSE first_seen_at
+              END < ?
         """,
         (cutoff_iso,),
     )
@@ -1199,8 +1202,28 @@ def upsert_jobs(conn: sqlite3.Connection, jobs: list[Job]) -> tuple[int, int]:
     return inserted, refreshed
 
 
-def get_jobs_for_sending(conn: sqlite3.Connection, limit: int = 100) -> list[StoredJob]:
+def get_jobs_for_sending(
+    conn: sqlite3.Connection,
+    limit: int = 100,
+    job_ids: set[int] | None = None,
+) -> list[StoredJob]:
     """Return jobs that are still pending or need retry."""
+    if job_ids is not None:
+        if not job_ids:
+            return []
+        placeholders = ",".join("?" for _ in job_ids)
+        rows = conn.execute(
+            f"""
+            SELECT * FROM jobs
+            WHERE send_status IN ('pending', 'retry', 'partial')
+              AND id IN ({placeholders})
+            ORDER BY first_seen_at DESC, id DESC
+            LIMIT ?
+            """,
+            (*job_ids, limit),
+        ).fetchall()
+        return [_row_to_stored_job(row) for row in rows]
+
     rows = conn.execute(
         """
         SELECT * FROM jobs
@@ -1523,7 +1546,10 @@ def expire_stale_unsent_jobs(
             freshness_status = 'TOO_OLD',
             freshness_reason = 'send_queue_deadline_exceeded'
         WHERE send_status IN ('pending', 'retry', 'partial')
-          AND first_seen_at < ?
+          AND CASE
+                WHEN freshness_reason = 'manual_review_approved' THEN last_seen_at
+                ELSE first_seen_at
+              END < ?
         """,
         (cutoff_iso,),
     )
