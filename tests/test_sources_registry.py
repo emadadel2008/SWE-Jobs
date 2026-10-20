@@ -2,6 +2,9 @@ import importlib.util
 import unittest
 from pathlib import Path
 
+import main
+from config import PRODUCTION_SOURCE_KEYS
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -17,7 +20,7 @@ class SourceRegistryTests(unittest.TestCase):
     def setUp(self):
         self.registry = load_registry_module()
 
-    def test_registry_enables_production_sources_plus_measured_shadow_sources(self):
+    def test_registry_contains_all_enabled_send_capable_sources(self):
         names = [name for name, _ in self.registry.ALL_FETCHERS]
         self.assertEqual(
             names,
@@ -89,9 +92,16 @@ class SourceRegistryTests(unittest.TestCase):
     def test_registry_contains_only_expected_core_fetcher_names(self):
         core_names = {fetcher.__name__ for _, fetcher in self.registry.CORE_FETCHERS}
         self.assertEqual(core_names, {"fetch_linkedin", "fetch_linkedin_saudi_v2"})
-        self.assertEqual(len(self.registry.SHADOW_BOARD_FETCHERS), 1)
-        self.assertEqual(self.registry.SHADOW_BOARD_FETCHERS[0][1].__name__, "fetch_jobzaty")
+        self.assertEqual(len(self.registry.BOARD_FETCHERS), 1)
+        self.assertEqual(self.registry.BOARD_FETCHERS[0][1].__name__, "fetch_jobzaty")
         self.assertEqual(len(self.registry.ATS_FETCHERS), 17)
+
+    def test_every_registered_source_is_send_capable(self):
+        for name, _ in self.registry.ALL_FETCHERS:
+            with self.subTest(source=name):
+                self.assertFalse(
+                    main._is_shadow_source(main._source_key(name), PRODUCTION_SOURCE_KEYS)
+                )
 
 
 if __name__ == "__main__":

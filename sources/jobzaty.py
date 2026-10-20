@@ -1,10 +1,9 @@
-"""Low-rate Saudi Jobzaty discovery adapter.
+"""Low-rate Saudi Jobzaty job adapter.
 
 Jobzaty is useful as a Saudi market discovery signal, but its public category
 cards do not expose minute-level publication time and many listings aggregate
-multiple openings into one announcement.  This adapter therefore stays
-``discovery-only``: it is fetched in shadow mode for coverage/dedup/registry
-measurement, but it is not eligible to create Telegram deliveries.
+multiple openings into one announcement. Matching, undelivered listings can be
+sent regardless of publication age under the default runtime policy.
 
 Only public category pages are read, at a deliberately low cadence.  No login,
 private profile, application endpoint, CAPTCHA, or access-control bypass is
@@ -106,11 +105,10 @@ def fetch_jobzaty(
     max_pages_per_category: int = 1,
     http_getter: Callable[[str], str | None] | None = None,
 ) -> list[Job]:
-    """Fetch a small, public Saudi tech discovery window from Jobzaty.
+    """Fetch a small, public Saudi tech listing window from Jobzaty.
 
     ``max_pages_per_category`` defaults to one on purpose.  This is not an
-    archive crawler; the source is only being measured as a current discovery
-    signal and has no safe minute-level freshness proof yet.
+    archive crawler; the source provides no precise publication timestamp.
     """
     if max_pages_per_category < 1:
         raise ValueError("max_pages_per_category must be >= 1")
@@ -187,8 +185,7 @@ def parse_jobzaty_listing(page_html: str, *, page_url: str = BASE_URL, category_
             job_type=job_type,
             tags=tags,
             is_remote=is_remote,
-            # No publication fields on purpose. The listing cards do not prove
-            # minute-level freshness, so runtime will keep this source discovery-only.
+            # No publication fields: category cards do not prove posting time.
         ))
 
     return jobs

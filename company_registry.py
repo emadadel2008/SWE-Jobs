@@ -1,10 +1,4 @@
-"""Static Saudi ATS company registry and fetcher construction.
-
-The registry starts deliberately small. Every generated ATS source is shadow
-by default because PRODUCTION_SOURCE_KEYS contains only explicitly promoted
-sources. This lets the bot measure fresh/exclusive/lead-time value before an
-employer feed can create Telegram deliveries.
-"""
+"""Static Saudi ATS company registry and fetcher construction."""
 from __future__ import annotations
 
 import json

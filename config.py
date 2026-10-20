@@ -729,12 +729,14 @@ DEFAULT_EMOJI = "💻"
 SOURCE_DISPLAY = {
     "wuzzuf": "WUZZUF",
     "linkedin": "LinkedIn",
-    "linkedin_saudi_v2": "LinkedIn Saudi V2 (Shadow)",
-    "jobzaty": "Jobzaty Discovery (Shadow)",
+    "linkedin_saudi_v2": "LinkedIn Saudi V2",
+    "jobzaty": "Jobzaty",
 }
 
 # ─── Misc ────────────────────────────────────────────────────
-MAX_JOBS_PER_RUN = 100   # safety cap per run
+MAX_JOBS_PER_RUN = int(os.getenv("MAX_JOBS_PER_RUN", "100"))
+if MAX_JOBS_PER_RUN < 1:
+    raise ValueError("MAX_JOBS_PER_RUN must be greater than zero")
 REQUEST_TIMEOUT = 15     # seconds
 SEED_MODE_ENV = "SEED_MODE"  # env var to force seed mode
 
@@ -745,9 +747,7 @@ LEGACY_BACKLOG_MAX_AGE_MINUTES = int(os.getenv("LEGACY_BACKLOG_MAX_AGE_MINUTES",
 # Fresh-only runtime policy. These are intentionally source-specific because
 # search feeds and snapshot-like category pages provide different evidence.
 LINKEDIN_FRESHNESS_SECONDS = int(os.getenv("LINKEDIN_FRESHNESS_SECONDS", "7200"))
-LINKEDIN_SEARCH_WINDOW_SECONDS = int(
-    os.getenv("LINKEDIN_SEARCH_WINDOW_SECONDS", str(14 * 24 * 60 * 60))
-)
+FRESH_ONLY = os.getenv("FRESH_ONLY", "false").lower() in ("1", "true", "yes")
 WUZZUF_OBSERVATION_MAX_AGE_MINUTES = int(os.getenv("WUZZUF_OBSERVATION_MAX_AGE_MINUTES", "60"))
 ATS_OBSERVATION_MAX_AGE_MINUTES = int(os.getenv("ATS_OBSERVATION_MAX_AGE_MINUTES", "120"))
 PENDING_SEND_MAX_AGE_MINUTES = int(os.getenv("PENDING_SEND_MAX_AGE_MINUTES", "60"))
@@ -755,19 +755,19 @@ PENDING_SEND_MAX_AGE_MINUTES = int(os.getenv("PENDING_SEND_MAX_AGE_MINUTES", "60
 SOURCE_FRESHNESS_POLICIES = {
     "linkedin": {
         "max_age_seconds": LINKEDIN_FRESHNESS_SECONDS,
-        "uncertain_fallback": "NONE",
+        "uncertain_fallback": "SOURCE_WINDOW",
     },
     "linkedin_saudi_v2": {
         "max_age_seconds": LINKEDIN_FRESHNESS_SECONDS,
-        "uncertain_fallback": "NONE",
+        "uncertain_fallback": "SOURCE_WINDOW",
     },
     "wuzzuf": {
         "max_age_seconds": WUZZUF_OBSERVATION_MAX_AGE_MINUTES * 60,
         "uncertain_fallback": "RECENT_OBSERVATION",
     },
     "jobzaty": {
-        "max_age_seconds": 60 * 60,
-        "uncertain_fallback": "NONE",
+        "max_age_seconds": 2 * 60 * 60,
+        "uncertain_fallback": "RECENT_OBSERVATION",
     },
 }
 
@@ -776,15 +776,12 @@ DEFAULT_SOURCE_FRESHNESS_POLICY = {
     "uncertain_fallback": "NONE",
 }
 
-# Sources allowed to create Telegram deliveries. Any source not listed here
-# runs in shadow mode by default: fetch, normalize, persist and measure, but
-# never send. Promotion is therefore an explicit code/config decision.
-PRODUCTION_SOURCE_KEYS = {"linkedin", "linkedin_saudi_v2", "wuzzuf"}
-
-# Discovery-only sources may be useful for coverage/ATS discovery metrics but
-# do not currently provide freshness evidence strong enough for a real-time feed.
-# Removing a key from this set must be an explicit future product decision.
-DISCOVERY_ONLY_SOURCE_KEYS = {"jobzaty"}
+# All registered source families may send when a job passes relevance, geography,
+# deduplication, and the optional freshness policy. Wuzzuf remains paused in
+# the runtime registry because GitHub-hosted requests repeatedly receive 403.
+PRODUCTION_SOURCE_KEYS = {
+    "linkedin", "linkedin_saudi_v2", "wuzzuf", "jobzaty", "ats_*",
+}
 
 # Health signal only; zero-result runs are persisted for later analysis and a
 # warning is emitted after this many consecutive successful empty fetches.
