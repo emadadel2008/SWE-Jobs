@@ -8,7 +8,7 @@ The product goal is a real-time job feed, not a historical job archive:
 
 ## Current Design
 
-- **Sources:** production LinkedIn, plus shadow Saudi LinkedIn V2, a low-rate Jobzaty discovery feed, and an evidence-driven shadow ATS company registry (Greenhouse, Lever, Ashby, Workday). WUZZUF is temporarily paused after repeated production 403 responses.
+- **Sources:** production LinkedIn and Saudi LinkedIn V2, a low-rate shadow Jobzaty discovery feed, and an evidence-driven shadow ATS company registry (Greenhouse, Lever, Ashby, Workday). WUZZUF is temporarily paused after repeated production 403 responses.
 - **Fresh-only gate:** old or uncertain jobs are stored for dedup/audit but are not posted late.
 - **Source baselines:** the first successful fetch of a new source never sends its existing backlog.
 - **Shadow-by-default sources:** any source not explicitly promoted to production is measured and stored but cannot send to Telegram. Shadow discovery cannot suppress a later fresh production discovery of the same job.
@@ -32,7 +32,7 @@ The current live deployment intentionally stays on **GitHub Actions + the `data`
 - GitHub scheduled execution is **best-effort**, so an actual run can start later than the requested cadence.
 - `VPS_PRODUCTION` should remain unset/`false` while GitHub owns production. The VPS files added in Update 19 are standby deployment tooling only.
 - LinkedIn is the active send-capable production fetcher. WUZZUF is paused at runtime after repeated `403` responses.
-- Saudi LinkedIn V2, Jobzaty Discovery, and all company ATS feeds remain shadow/discovery sources and cannot independently send Telegram jobs.
+- Jobzaty Discovery and all company ATS feeds remain shadow/discovery sources and cannot independently send Telegram jobs.
 - The current deployment does **not** enable automatic gap catch-up/backfill. A long GitHub scheduling gap can still mean jobs were missed during the outage, but LinkedIn's next bounded `r7200` result set remains eligible on its own instead of being rejected merely because the previous poll was late.
 - Topic renames inside Telegram are safe: renaming an existing forum topic does not change its `message_thread_id`, so the stored GitHub topic secret does not need to change unless the topic itself is deleted/recreated.
 
@@ -46,7 +46,7 @@ Enabled sources are assembled in `sources/__init__.py` as `ALL_FETCHERS`. Core f
 |---|---|---|
 | WUZZUF | Paused | Repeated 403 responses from GitHub-hosted runners; parser retained for future re-evaluation |
 | LinkedIn | Production | 21 bounded Microsoft Cloud product searches across Egypt, Saudi Arabia, and global remote; no employer restriction |
-| LinkedIn Saudi V2 | Shadow | Saudi `geoId=100459316`, broad country search + ERP/business-systems gap fillers |
+| LinkedIn Saudi V2 | Production | Saudi `geoId=100459316`, broad country search + ERP/business-systems gap fillers |
 | Jobzaty Discovery | Shadow · discovery-only | Public Saudi programming/cybersecurity/IT category cards · 60 min poll · never sends |
 | HALA | Shadow ATS | Greenhouse public job board · 30 min poll |
 | MinIO | Shadow ATS | Greenhouse public job board, Saudi rows only · 60 min poll |
@@ -128,11 +128,11 @@ Health intentionally distinguishes a quiet ATS tenant from a broken integration:
 
 If two or more tenants on the same ATS adapter all fail in the same bot run, an adapter-level outage warning is logged so a Greenhouse/Ashby/Workday parser or platform change is not mistaken for multiple unrelated employer failures.
 
-### Saudi LinkedIn V2 shadow experiment
+### Saudi LinkedIn V2 production feed
 
 The V2 strategy uses Saudi Arabia's LinkedIn `geoId` and a broad country-level search, then lets the local classifier decide which cards are tech. A small ERP/business-systems gap-filler layer covers SAP/ERP, Oracle/Odoo, and Dynamics/Salesforce. It intentionally does **not** hard-code undocumented LinkedIn job-function IDs yet; those can be A/B tested later in shadow if the broad strategy is too noisy or request-heavy.
 
-The current V2 source is not in `PRODUCTION_SOURCE_KEYS`, so it can populate metrics but cannot create Telegram deliveries.
+Fresh, relevant jobs discovered by V2 can now be sent through the same Microsoft Cloud, geography, and freshness gates as the primary LinkedIn feed. Previously stored shadow discoveries remain suppressed and are not backfilled.
 
 ## Classifier and Saudi Location Normalization
 
@@ -642,6 +642,6 @@ python main.py
 - Retired Telegram topics can be closed instead of deleted so their historical posts remain accessible.
 - Do not publish full job descriptions in the group; cards intentionally stay compact.
 - WUZZUF is paused at runtime after repeated 403 responses; keep its parser/tests until a safe re-evaluation is useful.
-- LinkedIn remains the only current send-capable production fetcher. Saudi ATS/company feeds and Saudi LinkedIn V2 provide the diversification/measurement layer in shadow mode.
+- LinkedIn and Saudi LinkedIn V2 are send-capable production fetchers. Saudi ATS/company feeds remain the diversification/measurement layer in shadow mode.
 - New Saudi sources should be added to the registry/fetch layer first, observed in shadow mode, and promoted only after their freshness/relevance/reliability/lead-time metrics look healthy. Discovery-only feeds must additionally prove safe publication-time semantics before they can ever be promoted.
 - Keep the ATS registry small and evidence-driven. Add employers because current data shows useful Saudi tech hiring, not simply to maximize company count.

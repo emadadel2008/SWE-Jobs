@@ -763,7 +763,7 @@ DEFAULT_SOURCE_FRESHNESS_POLICY = {
 # Sources allowed to create Telegram deliveries. Any source not listed here
 # runs in shadow mode by default: fetch, normalize, persist and measure, but
 # never send. Promotion is therefore an explicit code/config decision.
-PRODUCTION_SOURCE_KEYS = {"linkedin", "wuzzuf"}
+PRODUCTION_SOURCE_KEYS = {"linkedin", "linkedin_saudi_v2", "wuzzuf"}
 
 # Discovery-only sources may be useful for coverage/ATS discovery metrics but
 # do not currently provide freshness evidence strong enough for a real-time feed.
