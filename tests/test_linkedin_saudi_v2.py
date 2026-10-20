@@ -18,6 +18,12 @@ SAMPLE = """
 
 
 class LinkedInSaudiV2Tests(unittest.TestCase):
+    def test_default_request_delay_matches_production_linkedin(self):
+        self.assertEqual(
+            linkedin_saudi_v2.DEFAULT_REQUEST_DELAY,
+            linkedin_saudi_v2.DEFAULT_REQUEST_DELAY_SECONDS,
+        )
+
     def test_searches_use_saudi_geoid_and_fresh_sorting(self):
         self.assertGreaterEqual(len(linkedin_saudi_v2.SAUDI_V2_SEARCHES), 1)
         for search in linkedin_saudi_v2.SAUDI_V2_SEARCHES:
