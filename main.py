@@ -38,7 +38,7 @@ try:
 except ModuleNotFoundError:  # local flat-file test layout
     from __init__ import ALL_FETCHERS, SOURCE_POLL_INTERVAL_MINUTES
 from models import Job, passes_geo_filter
-from classifier import is_microsoft_cloud_job
+from classifier import is_microsoft_cloud_job, is_target_microsoft_cloud_role
 from eligibility import enrich_job_eligibility
 from telegram_sender import (
     CONFIG_ERROR,
@@ -297,7 +297,22 @@ def should_keep_job(job: Job) -> bool:
     if not job.title or not job.url:
         return False
 
-    return is_microsoft_cloud_job(job) and passes_geo_filter(job)
+    return (
+        is_microsoft_cloud_job(job)
+        and is_target_microsoft_cloud_role(job)
+        and passes_geo_filter(job)
+    )
+
+
+def _log_review_candidate(job: Job, status: str, reason: str) -> None:
+    log.info(
+        "Review candidate (not auto-sent; freshness=%s, reason=%s): %s | %s | %s",
+        status,
+        reason,
+        job.title,
+        job.source,
+        job.url,
+    )
 
 
 def filter_jobs_for_runtime(jobs: list[Job]) -> list[Job]:
@@ -470,6 +485,7 @@ def persist_filtered_jobs(
                 set_job_send_status(conn, job_id, "shadow")
                 shadow_eligible += 1
                 metrics.shadow_eligible_jobs += 1
+                _log_review_candidate(job, "SHADOW", "source_not_production")
             continue
 
         if decision.status == BASELINE:
@@ -483,6 +499,7 @@ def persist_filtered_jobs(
             if decision.status == UNCERTAIN:
                 uncertain_new += 1
                 metrics.uncertain_new_jobs += 1
+        _log_review_candidate(job, decision.status, decision.reason)
 
     conn.commit()
     return (

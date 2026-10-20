@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from typing import Callable
 from urllib.parse import parse_qsl, urlencode, urljoin, urlsplit, urlunsplit
 
-from config import LINKEDIN_FRESHNESS_SECONDS
+from config import LINKEDIN_SEARCH_WINDOW_SECONDS
 from freshness import (
     PRECISION_EXACT,
     PRECISION_NONE,
@@ -40,11 +40,9 @@ SEARCH_URL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/se
 BASE_URL = "https://www.linkedin.com"
 
 # Keep this intentionally small. LinkedIn is a high-risk/fragile source.
-# f_TPR=r7200 => last 2 hours; sortBy=DD => newest first.
-# Match the rolling freshness window to the two-hour workflow cadence so
-# scheduled runs can discover jobs posted between runs.
-DEFAULT_FRESHNESS_SECONDS = LINKEDIN_FRESHNESS_SECONDS
-LINKEDIN_DEFAULT_PARAMS = {"f_TPR": f"r{DEFAULT_FRESHNESS_SECONDS}", "sortBy": "DD"}
+# Search two weeks for review; the delivery freshness gate remains two hours.
+DEFAULT_SEARCH_WINDOW_SECONDS = LINKEDIN_SEARCH_WINDOW_SECONDS
+LINKEDIN_DEFAULT_PARAMS = {"f_TPR": f"r{DEFAULT_SEARCH_WINDOW_SECONDS}", "sortBy": "DD"}
 
 
 def _fresh_params(**params: str) -> dict[str, str]:
@@ -62,7 +60,10 @@ ARAB_COUNTRY_SEARCH_LOCATIONS = (
 
 LINKEDIN_KEYWORDS = (
     "Azure", "Microsoft 365", "Office 365", "Entra",
-    "Dynamics 365", "Power Platform", "Power BI",
+    "Dynamics 365", "Power Platform", "Power BI", "Intune",
+    "Microsoft Defender", "Microsoft Sentinel", "Microsoft Copilot",
+    "Azure DevOps", "Azure Arc", "Azure OpenAI", "SAP", "ERP",
+    "أزور", "مايكروسوفت 365", "ديناميكس 365", "باور بلاتفورم", "أمن سيبراني",
 )
 LINKEDIN_KEYWORD_QUERY = " OR ".join(f'"{keyword}"' for keyword in LINKEDIN_KEYWORDS)
 
@@ -158,7 +159,11 @@ def fetch_linkedin(
                     time.sleep(request_delay)
                 continue
 
-            parsed = parse_linkedin_html(page_html, search_params=params, max_age_seconds=DEFAULT_FRESHNESS_SECONDS)
+            parsed = parse_linkedin_html(
+                page_html,
+                search_params=params,
+                max_age_seconds=DEFAULT_SEARCH_WINDOW_SECONDS,
+            )
             for job in parsed:
                 normalized_url = canonicalize_linkedin_url(job.url)
                 if normalized_url in seen_urls:

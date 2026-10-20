@@ -132,12 +132,19 @@ def _is_remote(job: Job) -> bool:
     if job.is_remote:
         return True
     combined = f"{job.title} {job.location} {job.job_type} {_flatten_tags(job.tags)}".lower()
-    return any(p in combined for p in config.REMOTE_PATTERNS)
+    return (
+        any(p in combined for p in config.REMOTE_PATTERNS)
+        or _text_matches_any(job.location, config.REMOTE_REGION_PATTERNS)
+    )
 
 
 def _is_in_allowed_country(location: str) -> bool:
-    """Check if location is in Egypt or Saudi Arabia."""
-    return _is_in_egypt(location) or _is_in_saudi(location)
+    """Check if location is Egypt, Saudi Arabia, or a selected Arab market."""
+    return (
+        _is_in_egypt(location)
+        or _is_in_saudi(location)
+        or _text_matches_any(location, config.ADDITIONAL_ARAB_MARKET_PATTERNS)
+    )
 
 
 def is_programming_job(job: Job) -> bool:
@@ -163,7 +170,7 @@ def is_programming_job(job: Job) -> bool:
 def passes_geo_filter(job: Job) -> bool:
     """
     Geo-filtering logic:
-    - Egypt/Saudi: pass all (onsite + remote)
+    - Egypt, Saudi Arabia, and selected Arab markets: pass all (onsite + remote)
     - Remote-only sources (Remotive, RemoteOK, WWR, Working Nomads): auto-pass
     - Others: must be remote OR in Egypt/Saudi
     """
@@ -174,7 +181,7 @@ def passes_geo_filter(job: Job) -> bool:
     if job.source in remote_only_sources:
         return True
 
-    # If job is in Egypt or Saudi Arabia, pass regardless
+    # If job is in an allowed onsite market, pass regardless
     if _is_in_allowed_country(job.location):
         return True
 
@@ -182,7 +189,7 @@ def passes_geo_filter(job: Job) -> bool:
     if _is_remote(job):
         return True
 
-    # Onsite outside Egypt/Saudi → reject
+    # Onsite outside allowed markets → reject
     return False
 
 

@@ -97,8 +97,29 @@ MICROSOFT_CLOUD_KEYWORDS = (
     "sharepoint online", "exchange online", "microsoft teams", "ms teams",
     "intune", "microsoft endpoint manager", "microsoft defender",
     "microsoft sentinel", "microsoft purview", "microsoft fabric",
+    "azure devops", "azure arc", "azure openai", "microsoft copilot",
+    "microsoft security",
     "ازور", "أزور", "اجور", "أجور", "مايكروسوفت 365", "ميكروسوفت 365",
     "ديناميكس 365", "داينمكس 365", "باور بلاتفورم", "باور ابس", "باور بي اي",
+    "شيربوينت", "تيمز", "إنتون", "ديفندر", "سينتينل", "بورفيو",
+)
+
+MICROSOFT_CLOUD_ROLE_KEYWORDS = (
+    "cloud architect", "cloud engineer", "azure architect", "azure engineer",
+    "azure administrator",
+    "microsoft 365", "m365", "intune",
+    "cloud security", "cyber security", "cybersecurity", "soc analyst", "siem",
+    "presales", "pre sales", "solutions architect", "consultant",
+    "technical trainer", "azure devops", "sre", "site reliability",
+    "power platform", "dynamics 365", "copilot", "sap", "erp", "it support",
+    "data engineer", "data analyst", "system administrator", "systems administrator",
+    "security engineer",
+    "مهندس سحابة", "أمن سيبراني", "امن سيبراني", "دعم فني",
+    "مسؤول أنظمة", "مسؤول انظمة",
+    "استشاري", "مدرب تقني", "مدرب فني", "مهندس أمن سيبراني", "مهندس امن سيبراني",
+    "محلل أمن سيبراني", "محلل امن سيبراني", "مهندس أمن المعلومات", "مهندس امن المعلومات",
+    "مدير النظام", "مدير الأنظمة", "مدير الانظمة", "مسؤول تقنية المعلومات",
+    "مهندس مايكروسوفت",
 )
 
 
@@ -166,6 +187,15 @@ def is_microsoft_cloud_job(job: Job) -> bool:
     """Require explicit product evidence, never an employer-name match."""
     fields = (job.title, _flatten_tags(job.tags), job.description)
     return any(_MICROSOFT_CLOUD_PATTERN.search(normalize_text(value)) for value in fields)
+
+
+def is_target_microsoft_cloud_role(job: Job) -> bool:
+    """Match the job families requested for the Microsoft Cloud feed."""
+    searchable = normalize_text(f"{job.title} {_flatten_tags(job.tags)} {job.description}")
+    return any(
+        re.search(rf"(?<!\w){re.escape(normalize_text(keyword))}(?!\w)", searchable)
+        for keyword in MICROSOFT_CLOUD_ROLE_KEYWORDS
+    )
 
 
 _MICROSOFT_CLOUD_PATTERN = re.compile(
