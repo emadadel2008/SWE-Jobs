@@ -123,8 +123,7 @@ if __name__ == "__main__":
 
 class LinkedInFreshnessAndActiveTests(unittest.TestCase):
     def test_all_default_searches_are_fresh_and_date_sorted(self):
-        self.assertGreaterEqual(linkedin.DEFAULT_FRESHNESS_SECONDS, 900)
-        self.assertLessEqual(linkedin.DEFAULT_FRESHNESS_SECONDS, 3600)
+        self.assertEqual(linkedin.DEFAULT_FRESHNESS_SECONDS, 7200)
         for search in linkedin.LINKEDIN_SEARCHES:
             self.assertEqual(search.get("f_TPR"), f"r{linkedin.DEFAULT_FRESHNESS_SECONDS}")
             self.assertEqual(search.get("sortBy"), "DD")
@@ -166,6 +165,17 @@ class LinkedInFreshnessAndActiveTests(unittest.TestCase):
         """
         jobs = linkedin.parse_linkedin_html(html, {"location": "Egypt"}, max_age_seconds=3600)
         self.assertEqual([job.title for job in jobs], ["Fresh Data Analyst"])
+
+    def test_default_parser_keeps_jobs_within_two_hour_search_window(self):
+        html = """
+        <li><a href="https://www.linkedin.com/jobs/view/recent-at-x-4444444445"></a>
+        <h3 class="base-search-card__title">Recent Data Analyst</h3>
+        <h4 class="base-search-card__subtitle">X</h4>
+        <span class="job-search-card__location">Cairo</span>
+        <time>1 hour ago</time></li>
+        """
+        jobs = linkedin.parse_linkedin_html(html, {"location": "Egypt"})
+        self.assertEqual([job.title for job in jobs], ["Recent Data Analyst"])
 
     def test_fetch_sends_freshness_and_sorting_params_to_getter(self):
         requested = []

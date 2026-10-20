@@ -731,7 +731,7 @@ LEGACY_BACKLOG_MAX_AGE_MINUTES = int(os.getenv("LEGACY_BACKLOG_MAX_AGE_MINUTES",
 
 # Fresh-only runtime policy. These are intentionally source-specific because
 # search feeds and snapshot-like category pages provide different evidence.
-LINKEDIN_FRESHNESS_SECONDS = int(os.getenv("LINKEDIN_FRESHNESS_SECONDS", "3600"))
+LINKEDIN_FRESHNESS_SECONDS = int(os.getenv("LINKEDIN_FRESHNESS_SECONDS", "7200"))
 WUZZUF_OBSERVATION_MAX_AGE_MINUTES = int(os.getenv("WUZZUF_OBSERVATION_MAX_AGE_MINUTES", "60"))
 ATS_OBSERVATION_MAX_AGE_MINUTES = int(os.getenv("ATS_OBSERVATION_MAX_AGE_MINUTES", "120"))
 PENDING_SEND_MAX_AGE_MINUTES = int(os.getenv("PENDING_SEND_MAX_AGE_MINUTES", "60"))

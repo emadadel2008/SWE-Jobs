@@ -40,9 +40,9 @@ SEARCH_URL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/se
 BASE_URL = "https://www.linkedin.com"
 
 # Keep this intentionally small. LinkedIn is a high-risk/fragile source.
-# f_TPR=r3600 => last 1 hour; sortBy=DD => newest first.
-# The rolling 1-hour freshness window is independent of the two-hour workflow
-# cadence. Do not widen it to backfill jobs between runs.
+# f_TPR=r7200 => last 2 hours; sortBy=DD => newest first.
+# Match the rolling freshness window to the two-hour workflow cadence so
+# scheduled runs can discover jobs posted between runs.
 DEFAULT_FRESHNESS_SECONDS = LINKEDIN_FRESHNESS_SECONDS
 LINKEDIN_DEFAULT_PARAMS = {"f_TPR": f"r{DEFAULT_FRESHNESS_SECONDS}", "sortBy": "DD"}
 

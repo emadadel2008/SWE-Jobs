@@ -664,7 +664,7 @@ class MainSqliteFlowTests(unittest.TestCase):
                 self.assertEqual(count_jobs(conn), 0)
 
     def test_old_linkedin_job_is_stored_but_never_sent(self):
-        evidence = parse_relative_publication("2 hours ago", fetched_at=self.now)
+        evidence = parse_relative_publication("3 hours ago", fetched_at=self.now)
         job = Job(
             title="Backend Developer",
             company="Acme",
