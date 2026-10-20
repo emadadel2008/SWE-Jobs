@@ -122,6 +122,9 @@ if __name__ == "__main__":
     unittest.main()
 
 class LinkedInFreshnessAndActiveTests(unittest.TestCase):
+    def test_default_request_delay_is_ten_seconds(self):
+        self.assertEqual(linkedin.DEFAULT_REQUEST_DELAY_SECONDS, 10)
+
     def test_all_default_searches_are_fresh_and_date_sorted(self):
         self.assertEqual(linkedin.DEFAULT_FRESHNESS_SECONDS, 7200)
         for search in linkedin.LINKEDIN_SEARCHES:

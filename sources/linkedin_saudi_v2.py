@@ -9,13 +9,15 @@ from __future__ import annotations
 import os
 
 try:
-    from sources.linkedin import fetch_linkedin, _fresh_params
+    from sources.linkedin import DEFAULT_REQUEST_DELAY_SECONDS, fetch_linkedin, _fresh_params
 except ModuleNotFoundError:
-    from linkedin import fetch_linkedin, _fresh_params
+    from linkedin import DEFAULT_REQUEST_DELAY_SECONDS, fetch_linkedin, _fresh_params
 
 SAUDI_GEO_ID = "100459316"
 DEFAULT_MAX_PAGES = int(os.getenv("LINKEDIN_SAUDI_V2_MAX_PAGES", "2"))
-DEFAULT_REQUEST_DELAY = float(os.getenv("LINKEDIN_SAUDI_V2_REQUEST_DELAY", os.getenv("LINKEDIN_REQUEST_DELAY", "4")))
+DEFAULT_REQUEST_DELAY = float(
+    os.getenv("LINKEDIN_SAUDI_V2_REQUEST_DELAY", str(DEFAULT_REQUEST_DELAY_SECONDS))
+)
 
 # We intentionally do not hard-code LinkedIn's undocumented f_F job-function
 # IDs yet. V2 measures a broad geoId strategy first; if request volume/noise is
