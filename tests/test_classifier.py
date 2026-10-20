@@ -6,6 +6,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from classifier import classify_job, is_microsoft_cloud_job, normalize_text
+from classifier import is_target_microsoft_cloud_role
 from models import Job
 
 
@@ -67,6 +68,7 @@ class ClassifierTests(unittest.TestCase):
             "Microsoft Teams Engineer", "Intune Administrator",
             "Microsoft Defender Specialist", "Microsoft Sentinel Analyst",
             "Microsoft Purview Engineer", "Microsoft Fabric Data Engineer",
+            "Azure Arc Engineer", "Azure OpenAI Consultant", "Microsoft Copilot Trainer",
             "استشاري ديناميكس 365", "مهندس أزور", "دعم مايكروسوفت 365",
         )
         for title in titles:
@@ -102,6 +104,21 @@ class ClassifierTests(unittest.TestCase):
     def test_cloud_evidence_cannot_span_independent_fields(self):
         job = Job("Microsoft", "Acme", "Remote", "https://x/1", "linkedin", tags=["365"])
         self.assertFalse(is_microsoft_cloud_job(job))
+
+    def test_target_cloud_role_filter_matches_requested_families(self):
+        for title in (
+            "Cloud Security Engineer", "Azure DevOps Consultant", "M365 Administrator",
+            "SOC Analyst", "SAP ERP Consultant", "Technical Trainer for Copilot",
+        ):
+            with self.subTest(title=title):
+                self.assertTrue(is_target_microsoft_cloud_role(Job(
+                    title, "Acme", "Remote", "https://x/1", "linkedin"
+                )))
+        for title in ("Frontend Developer", "Recruiter"):
+            with self.subTest(title=title):
+                self.assertFalse(is_target_microsoft_cloud_role(Job(
+                    title, "Acme", "Remote", "https://x/1", "linkedin"
+                )))
 
 
 if __name__ == "__main__":

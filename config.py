@@ -357,7 +357,20 @@ SAUDI_PATTERNS = {
 REMOTE_PATTERNS = {
     "remote", "anywhere", "worldwide", "work from home", "wfh",
     "distributed", "global", "fully remote", "100% remote",
-    "remote-friendly", "location independent", "عن بعد",
+    "remote-friendly", "location independent", "عن بعد", "من أي مكان",
+}
+REMOTE_REGION_PATTERNS = {"mena", "middle east", "emea", "africa", "الشرق الأوسط", "أفريقيا"}
+
+# Additional onsite markets requested by the updated filter. Egypt and Saudi
+# Arabia keep their detailed city lists below.
+ADDITIONAL_ARAB_MARKET_PATTERNS = {
+    "united arab emirates", "uae", "dubai", "abu dhabi", "sharjah", "ajman",
+    "ras al khaimah", "الإمارات", "الامارات",
+    "qatar", "doha", "قطر", "الكويت", "kuwait", "kuwait city",
+    "bahrain", "manama", "البحرين", "oman", "muscat", "عمان",
+    "jordan", "amman", "الأردن", "الاردن", "morocco", "casablanca", "rabat",
+    "tangier", "المغرب",
+    "gulf", "الخليج",
 }
 
 # ─── Job Keywords ────────────────────────────────────────────
@@ -732,6 +745,9 @@ LEGACY_BACKLOG_MAX_AGE_MINUTES = int(os.getenv("LEGACY_BACKLOG_MAX_AGE_MINUTES",
 # Fresh-only runtime policy. These are intentionally source-specific because
 # search feeds and snapshot-like category pages provide different evidence.
 LINKEDIN_FRESHNESS_SECONDS = int(os.getenv("LINKEDIN_FRESHNESS_SECONDS", "7200"))
+LINKEDIN_SEARCH_WINDOW_SECONDS = int(
+    os.getenv("LINKEDIN_SEARCH_WINDOW_SECONDS", str(14 * 24 * 60 * 60))
+)
 WUZZUF_OBSERVATION_MAX_AGE_MINUTES = int(os.getenv("WUZZUF_OBSERVATION_MAX_AGE_MINUTES", "60"))
 ATS_OBSERVATION_MAX_AGE_MINUTES = int(os.getenv("ATS_OBSERVATION_MAX_AGE_MINUTES", "120"))
 PENDING_SEND_MAX_AGE_MINUTES = int(os.getenv("PENDING_SEND_MAX_AGE_MINUTES", "60"))
@@ -739,11 +755,11 @@ PENDING_SEND_MAX_AGE_MINUTES = int(os.getenv("PENDING_SEND_MAX_AGE_MINUTES", "60
 SOURCE_FRESHNESS_POLICIES = {
     "linkedin": {
         "max_age_seconds": LINKEDIN_FRESHNESS_SECONDS,
-        "uncertain_fallback": "SOURCE_WINDOW",
+        "uncertain_fallback": "NONE",
     },
     "linkedin_saudi_v2": {
         "max_age_seconds": LINKEDIN_FRESHNESS_SECONDS,
-        "uncertain_fallback": "SOURCE_WINDOW",
+        "uncertain_fallback": "NONE",
     },
     "wuzzuf": {
         "max_age_seconds": WUZZUF_OBSERVATION_MAX_AGE_MINUTES * 60,
