@@ -71,13 +71,17 @@ Enabled sources are assembled in `sources/__init__.py` as `ALL_FETCHERS`. Core f
 | Dell Technologies Egypt | Send-capable ATS | Public Dell Oracle Recruiting Cloud feed; zero Egypt results is valid · 120 min poll |
 | Capgemini Egypt | Send-capable ATS | Official jobstream API, Egypt locale and one-based pagination · 120 min poll |
 | Cisco Egypt | Send-capable ATS | Public Phenom Egypt facet and official descriptions; independent of Saudi Workday feed · 120 min poll |
+| NTT DATA Egypt | Send-capable ATS | Public Phenom Egypt facet and full official descriptions; independent of Saudi Workday feed · 120 min poll |
+| DXC Technology Egypt | Send-capable ATS | Public Workday CXS search and details; detail country checked even for multi-location cards · 120 min poll |
+| Raya Egypt | Send-capable ATS | Official corporate Oracle Recruiting Cloud board, including group subsidiaries · 120 min poll |
+| Giza Systems / Pulse Egypt | Send-capable ATS | Official linked Pulse Talentera board, Egyptian rows and complete visible descriptions · 120 min poll |
 | Legacy aggregators | Disabled | Not registered at runtime |
 
 All registered ATS feeds can send matching jobs, including their first successful fetch.
 
 ### Egyptian employer careers feeds
 
-`sources/egypt_careers.py` reads seven official public career-site search endpoints and
+`sources/egypt_careers.py` and `sources/egypt_enterprise.py` read official public career-site endpoints and
 checks each result's location before passing it to the existing Microsoft Cloud
 filter. These feeds do not publish every vacancy at the employer: product
 relevance, geography, duplicate protection, quiet hours, and delivery limits
@@ -113,6 +117,39 @@ working public feed can be verified:
 
 These limitations are not treated as zero vacancies. Their existing LinkedIn
 coverage is unchanged, but there is no claim of direct employer-feed coverage.
+
+#### Additional Egyptian employers
+
+The next employer batch adds NTT DATA, DXC Technology, Raya, and Giza Systems /
+Pulse. DXC enumerates Egypt/Cairo/Giza searches, deduplicates requisitions across
+queries, and reads full Workday descriptions before filtering. NTT DATA uses its
+Phenom front end because its Workday free-text Egypt search did not return the
+Egyptian vacancy exposed by the official country facet.
+
+Raya's official corporate site links to the `RayaCareers` Oracle board. This is
+group-wide coverage, **not a verified IT-division-only feed**. Giza Systems'
+careers page links to `pulse-careers.com`; individual subsidiary employer names
+are preserved instead of attributing every vacancy to Giza Systems. Its public
+Talentera list is paginated and full descriptions are read from the visible
+`job-desc` section because the site's JSON-LD contains invalid escaping.
+Unexpected HTML in a JSON search response fails the source explicitly; it is
+not treated as zero vacancies.
+
+Live local verification on 21 October 2026 found 30 DXC postings (11 filter
+matches), 1 NTT DATA posting (1 match), 6 Raya postings (no matches), and 27
+Egypt-located Giza/Pulse postings (no matches). These counts precede persistent
+cross-source duplicate checks and may change.
+
+Six other suggested companies remain **not enabled**:
+
+| Employer | Current verification limitation |
+|---|---|
+| Avanade | Official search and Avature links located, but a complete Egypt job feed was not verified |
+| Accenture | Official site linked to Workday; public job search returned HTTP 429 |
+| LINK Development | Career pages returned HTTP 403; no access-control bypass attempted |
+| ACT Egypt | Official site timed out; no working feed verified |
+| e& Egypt | Main site reachable, but career endpoint returned HTTP 500; no job feed verified |
+| Telecom Egypt / WE | Correct careers/jobs page located, but no usable vacancy payload verified |
 
 ### Saudi job-board discovery
 
@@ -644,6 +681,7 @@ python main.py
 │   ├── __init__.py
 │   ├── ats.py
 │   ├── egypt_careers.py
+│   ├── egypt_enterprise.py
 │   ├── http_utils.py
 │   ├── wuzzuf.py
 │   ├── linkedin.py
@@ -659,6 +697,7 @@ python main.py
 │   ├── test_dedup.py
 │   ├── test_eligibility.py
 │   ├── test_egypt_careers.py
+│   ├── test_egypt_enterprise.py
 │   ├── test_freshness.py
 │   ├── test_linkedin.py
 │   ├── test_jobzaty.py

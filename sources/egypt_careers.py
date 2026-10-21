@@ -209,6 +209,14 @@ def fetch_cisco_egypt() -> list[Job]:
     )
 
 
+def fetch_nttdata_egypt() -> list[Job]:
+    return _fetch_phenom_egypt(
+        base="https://careers.nttdata.com", ref_num="NTT1GLOBAL", lang="en_global",
+        country="global", employer="NTT DATA", source_key="ats_phenom_nttdata_egypt",
+        country_facet="Egypt", site_path="global/en",
+    )
+
+
 def fetch_amazon_egypt() -> list[Job]:
     jobs: list[Job] = []
     seen: set[str] = set()
@@ -302,6 +310,13 @@ def fetch_dell_egypt() -> list[Job]:
     return _fetch_oracle_cloud_egypt(
         host="https://enterpriseplatform.dell.com", site="CX_2001",
         employer="Dell Technologies", source_key="ats_dell_egypt",
+    )
+
+
+def fetch_raya_egypt() -> list[Job]:
+    return _fetch_oracle_cloud_egypt(
+        host="https://fa-ewrh-saasfaprod1.fa.ocs.oraclecloud.com", site="RayaCareers",
+        employer="Raya", source_key="ats_oracle_raya_egypt",
     )
 
 
