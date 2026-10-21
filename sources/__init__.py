@@ -16,6 +16,15 @@ except ModuleNotFoundError:  # local flat-file test layout
     from jobzaty import fetch_jobzaty
 
 from company_registry import build_ats_fetchers, build_ats_poll_intervals
+from sources.egypt_careers import (
+    fetch_amazon_egypt,
+    fetch_capgemini_egypt,
+    fetch_cisco_egypt,
+    fetch_dell_egypt,
+    fetch_oracle_egypt,
+    fetch_orange_egypt,
+    fetch_vodafone_egypt,
+)
 
 CORE_FETCHERS = [
     ("LinkedIn", fetch_linkedin),
@@ -24,12 +33,22 @@ CORE_FETCHERS = [
 
 BOARD_FETCHERS = [("Jobzaty", fetch_jobzaty)]
 ATS_FETCHERS = build_ats_fetchers()
-ALL_FETCHERS = CORE_FETCHERS + BOARD_FETCHERS + ATS_FETCHERS
+EGYPT_FETCHERS = [
+    ("ATS Eightfold Vodafone Egypt", fetch_vodafone_egypt),
+    ("ATS Phenom Orange Egypt", fetch_orange_egypt),
+    ("ATS Amazon Egypt", fetch_amazon_egypt),
+    ("ATS Oracle Egypt", fetch_oracle_egypt),
+    ("ATS Dell Egypt", fetch_dell_egypt),
+    ("ATS Capgemini Egypt", fetch_capgemini_egypt),
+    ("ATS Phenom Cisco Egypt", fetch_cisco_egypt),
+]
+ALL_FETCHERS = CORE_FETCHERS + BOARD_FETCHERS + ATS_FETCHERS + EGYPT_FETCHERS
 
 SOURCE_POLL_INTERVAL_MINUTES = {
     "linkedin": 15,
     "linkedin_saudi_v2": 15,
     "jobzaty": 60,
     **build_ats_poll_intervals(),
+    **{name.lower().replace(" ", "_"): 120 for name, _ in EGYPT_FETCHERS},
 }
 ENABLED_SOURCE_NAMES = tuple(name for name, _ in ALL_FETCHERS)

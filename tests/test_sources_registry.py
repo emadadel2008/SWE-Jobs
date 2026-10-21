@@ -45,6 +45,13 @@ class SourceRegistryTests(unittest.TestCase):
                 "ATS Workday hpe",
                 "ATS Workday workday",
                 "ATS Workday salesforce",
+                "ATS Eightfold Vodafone Egypt",
+                "ATS Phenom Orange Egypt",
+                "ATS Amazon Egypt",
+                "ATS Oracle Egypt",
+                "ATS Dell Egypt",
+                "ATS Capgemini Egypt",
+                "ATS Phenom Cisco Egypt",
             ],
         )
 
@@ -57,6 +64,8 @@ class SourceRegistryTests(unittest.TestCase):
         self.assertEqual(intervals["ats_greenhouse_hala"], 30)
         self.assertEqual(intervals["ats_greenhouse_minio"], 60)
         self.assertEqual(intervals["ats_workday_cisco"], 60)
+        self.assertEqual(intervals["ats_eightfold_vodafone_egypt"], 120)
+        self.assertEqual(intervals["ats_phenom_orange_egypt"], 120)
 
     def test_no_legacy_sources_are_registered(self):
         names = {name.lower() for name, _ in self.registry.ALL_FETCHERS}
