@@ -8,7 +8,7 @@ The product goal is relevant job discovery with duplicate-safe delivery:
 
 ## Current Design
 
-- **Sources:** LinkedIn, Saudi LinkedIn V2, Jobzaty, and the registered Saudi ATS company feeds (Greenhouse, Lever, Ashby, Workday) can all send qualifying jobs. WUZZUF is temporarily paused after repeated production 403 responses.
+- **Sources:** LinkedIn, Saudi LinkedIn V2, Jobzaty, registered Saudi ATS company feeds, and verified Egyptian employer careers feeds can all send qualifying jobs. WUZZUF is temporarily paused after repeated production 403 responses.
 - **No age limit:** `FRESH_ONLY=false` by default. Old or missing publication dates do not block matching jobs.
 - **Stored matches:** previously expired, skipped, and shadow jobs are reconsidered if never delivered. Successful, ambiguous, and terminal failed deliveries remain protected.
 - **Per-source run history:** fetch counts, freshness outcomes, failures, duration, shadow yield, coverage gaps, and health status are stored for later source scoring.
@@ -64,9 +64,55 @@ Enabled sources are assembled in `sources/__init__.py` as `ALL_FETCHERS`. Core f
 | HPE | Send-capable ATS | Workday CXS; Riyadh data/cloud/COOP roles · 60 min poll |
 | Workday | Send-capable ATS | Workday CXS; Riyadh Workday/solution roles · 60 min poll |
 | Salesforce | Send-capable ATS | Workday CXS; Saudi cloud/solution roles · 60 min poll |
+| Vodafone / VOIS Egypt | Send-capable ATS | Public Eightfold PCSX search, Egypt locations and full official descriptions · 120 min poll |
+| Orange Egypt | Send-capable ATS | Public Phenom search widget, explicit Egypt country facet and full official descriptions · 120 min poll |
+| Amazon / AWS Egypt | Send-capable ATS | Public Amazon Jobs JSON search, `EGY` country code, complete descriptions · 120 min poll |
+| Oracle Egypt | Send-capable ATS | Public Oracle Recruiting Cloud search with expanded requisitions and local country checks · 120 min poll |
+| Dell Technologies Egypt | Send-capable ATS | Public Dell Oracle Recruiting Cloud feed; zero Egypt results is valid · 120 min poll |
+| Capgemini Egypt | Send-capable ATS | Official jobstream API, Egypt locale and one-based pagination · 120 min poll |
+| Cisco Egypt | Send-capable ATS | Public Phenom Egypt facet and official descriptions; independent of Saudi Workday feed · 120 min poll |
 | Legacy aggregators | Disabled | Not registered at runtime |
 
 All registered ATS feeds can send matching jobs, including their first successful fetch.
+
+### Egyptian employer careers feeds
+
+`sources/egypt_careers.py` reads seven official public career-site search endpoints and
+checks each result's location before passing it to the existing Microsoft Cloud
+filter. These feeds do not publish every vacancy at the employer: product
+relevance, geography, duplicate protection, quiet hours, and delivery limits
+remain unchanged. Employer sources use distinct `ats_*_egypt` keys so source
+health and polling state remain separate from the Saudi registry.
+
+Vodafone uses `/api/pcsx/search`, following the returned position count and
+offsets rather than a single selected `pid`. Orange uses `/widgets` with the
+`refineSearch` DDO and `country=["EGYPT"]`; the browser URL's location text alone
+does not reliably restrict all returned jobs. Both adapters retrieve the
+official Egypt job descriptions so Azure/Microsoft 365 evidence is not lost when
+the title is generic. Orange's synchronized `postedDate` is not treated as the
+original publication time.
+
+Pagination errors, missing expected payloads, and failed detail requests fail
+the source explicitly instead of reporting an empty successful fetch. No login,
+access-control bypass, or additional credentials are used.
+
+Verification on 21 October 2026 returned 41 Vodafone, 61 Orange, 72 Amazon,
+4 Oracle, 0 Dell, 76 Capgemini, and 1 Cisco Egypt vacancies. These are source
+counts, not promises of Microsoft Cloud matches or future availability.
+
+The other five requested employers are **not registered or enabled** until a
+working public feed can be verified:
+
+| Employer | Verification limitation |
+|---|---|
+| Microsoft | Career search route redirected to an error page; the historical API had a TLS connectivity failure |
+| IBM | Search page loaded, but no usable job payload/API was verified |
+| SAP | Official search returned a 403 JavaScript challenge; no access-control bypass is attempted |
+| Deloitte | Supplied portal is US-focused; an Egypt country facet/result feed was not verified |
+| ITWorx | Official careers SPA loaded, but its job API was not verified |
+
+These limitations are not treated as zero vacancies. Their existing LinkedIn
+coverage is unchanged, but there is no claim of direct employer-feed coverage.
 
 ### Saudi job-board discovery
 
@@ -597,6 +643,7 @@ python main.py
 ├── sources/
 │   ├── __init__.py
 │   ├── ats.py
+│   ├── egypt_careers.py
 │   ├── http_utils.py
 │   ├── wuzzuf.py
 │   ├── linkedin.py
@@ -611,6 +658,7 @@ python main.py
 │   ├── test_db_maintenance.py
 │   ├── test_dedup.py
 │   ├── test_eligibility.py
+│   ├── test_egypt_careers.py
 │   ├── test_freshness.py
 │   ├── test_linkedin.py
 │   ├── test_jobzaty.py
