@@ -21,10 +21,13 @@ from sources.egypt_careers import (
     fetch_capgemini_egypt,
     fetch_cisco_egypt,
     fetch_dell_egypt,
+    fetch_nttdata_egypt,
     fetch_oracle_egypt,
     fetch_orange_egypt,
+    fetch_raya_egypt,
     fetch_vodafone_egypt,
 )
+from sources.egypt_enterprise import fetch_dxc_egypt, fetch_giza_systems_egypt
 
 CORE_FETCHERS = [
     ("LinkedIn", fetch_linkedin),
@@ -41,6 +44,10 @@ EGYPT_FETCHERS = [
     ("ATS Dell Egypt", fetch_dell_egypt),
     ("ATS Capgemini Egypt", fetch_capgemini_egypt),
     ("ATS Phenom Cisco Egypt", fetch_cisco_egypt),
+    ("ATS Phenom NTTDATA Egypt", fetch_nttdata_egypt),
+    ("ATS Workday DXC Egypt", fetch_dxc_egypt),
+    ("ATS Oracle Raya Egypt", fetch_raya_egypt),
+    ("ATS Talentera Giza Egypt", fetch_giza_systems_egypt),
 ]
 ALL_FETCHERS = CORE_FETCHERS + BOARD_FETCHERS + ATS_FETCHERS + EGYPT_FETCHERS
 
